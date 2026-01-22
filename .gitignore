@@ -1,0 +1,28 @@
+# Environments
+.venv/
+env/
+venv/
+ENV/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Data files (keep the sample workload if desired, but ignore generated outputs)
+# workload_weekly.csv  <-- Commented out in case user wants to keep it
+# personnel_roster_weekly.csv
+# shuttle_report_weekly.csv
+# weekly_summary.csv
+# assigned_shifts_weekly.csv
+
+# Plots and graphs
+graphs/
+*.png
+
+# Streamlit
+.streamlit/
+
+# OS files
+.DS_Store
+Thumbs.db

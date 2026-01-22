@@ -2,3 +2,5 @@ pulp
 pandas
 matplotlib
 numpy
+streamlit
+seaborn
