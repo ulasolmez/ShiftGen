@@ -78,10 +78,26 @@ with col1:
                 
                 # Basic validation or Standardization: Ensure 3 columns
                 if len(df.columns) >= 3:
-                     # Rename to internal standard just in case user has different headers
-                     # We assume order is Day, Time, Count based on user description
-                     df = df.iloc[:, :3] # Take first 3 cols only
+                     # Take first 3 cols only
+                     df = df.iloc[:, :3] 
                      df.columns = ["day_name", "time", "required_headcount"]
+                     
+                     # standardize time column string format to HH:MM (pad hour, remove seconds)
+                     def normalize_time_str(t):
+                         s = str(t).strip()
+                         # Handle default datetime string "1900-01-01 08:30:00" or simple "08:30:00"
+                         if " " in s:
+                             s = s.split(" ")[-1]
+                         # Handle "08:30:00" -> "08:30"
+                         parts = s.split(":")
+                         if len(parts) >= 2:
+                             h = int(parts[0])
+                             m = int(parts[1])
+                             return f"{h:02d}:{m:02d}"
+                         return s
+
+                     df['time'] = df['time'].apply(normalize_time_str)
+
                      df.to_csv("workload_weekly.csv", index=False)
                      st.success(f"Workload imported successfully! ({len(df)} rows)")
                      st.rerun()
