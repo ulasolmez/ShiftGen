@@ -46,27 +46,53 @@ else:
     st.sidebar.info("Shuttles will be aligned to workload transitions automatically.")
     shuttle_windows = None
 
-st.sidebar.markdown("---")
-if st.sidebar.button("🎲 Generate Random Workload"):
-    generate_sample_workload(randomized=True)
-    st.sidebar.success("New 'workload_weekly.csv' generated!")
-
 # --- Main Layout: File Operations ---
 col1, col2 = st.columns(2)
 
 with col1:
-    st.subheader("1. Import Data")
-    uploaded_workload = st.file_uploader("Upload Workload CSV (time, required_headcount)", type=["csv"])
-    if uploaded_workload:
-        df = pd.read_csv(uploaded_workload)
-        df.to_csv("workload_weekly.csv", index=False)
-        st.success("Workload imported!")
+    st.subheader("1. Workload Management")
     
-    uploaded_templates = st.file_uploader("Upload Shift Templates (Optional)", type=["csv"])
-    if uploaded_templates:
-        df_t = pd.read_csv(uploaded_templates)
-        df_t.to_csv("shift_templates.csv", index=False)
-        st.success("Templates imported!")
+    # Check if workload exists
+    current_workload_exists = os.path.exists("workload_weekly.csv")
+    
+    tab_import, tab_edit = st.tabs(["📂 Import / Generate", "✏️ Interactive Editor"])
+    
+    with tab_import:
+        # 1. Random Generation
+        if st.button("🎲 Generate Random Workload", help="Overwrites current workload with random data"):
+            generate_sample_workload(randomized=True)
+            st.success("New 'workload_weekly.csv' generated!")
+            st.rerun()
+
+        st.markdown("---")
+
+        # 2. Upload
+        uploaded_workload = st.file_uploader("Upload Workload CSV", type=["csv"], help="Columns: day_name, time, required_headcount")
+        if uploaded_workload:
+            df = pd.read_csv(uploaded_workload)
+            df.to_csv("workload_weekly.csv", index=False)
+            st.success("Workload imported!")
+            st.rerun()
+
+    with tab_edit:
+        if current_workload_exists:
+            df_edit = pd.read_csv("workload_weekly.csv")
+            st.caption("Modify the required headcount for specific times.")
+            
+            # Using st.data_editor for interactive grid
+            edited_workload = st.data_editor(
+                df_edit, 
+                key="workload_editor", 
+                height=400, 
+                use_container_width=True,
+                num_rows="dynamic"
+            )
+            
+            if st.button("💾 Save Manual Changes"):
+                edited_workload.to_csv("workload_weekly.csv", index=False)
+                st.success("Changes saved to 'workload_weekly.csv'!")
+        else:
+            st.warning("No workload data found. Please Generate or Upload first.")
 
 with col2:
     st.subheader("2. Run Calculation")
