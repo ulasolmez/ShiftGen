@@ -68,13 +68,10 @@ with col1:
         st.markdown("---")
 
         # 2. Upload
-        uploaded_workload = st.file_uploader("Upload Workload (CSV or Excel)", type=["csv", "xlsx"], help="Format: 3 Columns [Day, Time, Headcount]")
+        uploaded_workload = st.file_uploader("Upload Workload CSV", type=["csv"], help="Format: 3 Columns [Day, Time, Headcount]")
         if uploaded_workload:
             try:
-                if uploaded_workload.name.endswith(".csv"):
-                    df = pd.read_csv(uploaded_workload)
-                else:
-                    df = pd.read_excel(uploaded_workload)
+                df = pd.read_csv(uploaded_workload)
                 
                 # Basic validation or Standardization: Ensure 3 columns
                 if len(df.columns) >= 3:
