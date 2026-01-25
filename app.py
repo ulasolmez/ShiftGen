@@ -23,6 +23,7 @@ max_shuttles = st.sidebar.number_input("Maximum Weekly Shuttles", min_value=0, v
 shuttle_capacity = st.sidebar.number_input("Shuttle Capacity (Pax)", min_value=1, value=16)
 
 add_buffer = st.sidebar.checkbox("Apply 30-min Prep/Handover Buffer", value=False, help="Forces shifts to start 30 mins early or stay 30 mins late around workload peaks to allow for preparation and shift handovers.")
+peak_cutting = st.sidebar.checkbox("Ignore Short-Duration Peak Spikes", value=False, help="Smoothes out very short workload spikes (less than 30 mins) to avoid hiring extra staff for momentary fluctuations.")
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("🚐 Shuttle Timeline Selection")
@@ -75,7 +76,8 @@ with col2:
                 custom_shuttle_windows=shuttle_windows,
                 shuttle_capacity=shuttle_capacity,
                 max_shuttles=max_shuttles,
-                add_handover_buffer=add_buffer
+                add_handover_buffer=add_buffer,
+                apply_peak_cutting=peak_cutting
             )
             
             if result is not None:

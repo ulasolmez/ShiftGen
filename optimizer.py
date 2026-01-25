@@ -13,7 +13,7 @@ def get_end_time_str(start_time_str, duration_hours):
     end_dt = start_dt + timedelta(hours=duration_hours)
     return end_dt.strftime("%H:%M")
 
-def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None, shuttle_interval=60, sparse_mode=False, shuttle_capacity=16, templates_path="shift_templates.csv", custom_shuttle_windows=None, max_shuttles=None, max_headcount=None, max_weekly_hours=48.0, auto_shuttle=False, add_handover_buffer=False):
+def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None, shuttle_interval=60, sparse_mode=False, shuttle_capacity=16, templates_path="shift_templates.csv", custom_shuttle_windows=None, max_shuttles=None, max_headcount=None, max_weekly_hours=48.0, auto_shuttle=False, add_handover_buffer=False, apply_peak_cutting=False):
     # 1. Load data
     if not os.path.exists(csv_path):
         print(f"Error: {csv_path} not found. Run generate_data.py first.")
@@ -22,6 +22,29 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
     required = df["required_headcount"].tolist()
     num_intervals = len(df) # 7 * 288 = 2016
     
+    # 1.4 Apply Peak Cutting (Short-duration spike removal)
+    # We do this BEFORE buffering so we don't accidentally widen a noise spike
+    if apply_peak_cutting:
+        print("Applying peak cutting to ignore short-duration spikes...")
+        # Window size of 6 intervals = 30 minutes. 
+        # Any peak narrower than ~15-20 mins will be flattened.
+        window = 6 
+        # Pad for wrapping: add last 6 to start, first 6 to end to handle boundaries
+        padded = required[-window:] + required + required[:window]
+        s_padded = pd.Series(padded)
+        
+        # Morphological Opening: Erosion (Min) followed by Dilation (Max)
+        # This removes small positive objects (peaks) without affecting bulk
+        eroded = s_padded.rolling(window=window, center=True, min_periods=1).min()
+        opened = eroded.rolling(window=window, center=True, min_periods=1).max()
+        
+        # Crop back to original size
+        # Start index is 'window', length is 'num_intervals'
+        cut_required = opened.tolist()[window : window + num_intervals]
+        
+        # Ensure we only cut down, never increase
+        required = [min(r, c) for r, c in zip(required, cut_required)]
+
     # 1.5 Apply Handover/Prep Buffer
     final_required = required.copy()
     if add_handover_buffer:
