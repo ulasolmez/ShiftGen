@@ -13,7 +13,7 @@ def get_end_time_str(start_time_str, duration_hours):
     end_dt = start_dt + timedelta(hours=duration_hours)
     return end_dt.strftime("%H:%M")
 
-def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None, shuttle_interval=60, sparse_mode=False, shuttle_capacity=16, templates_path="shift_templates.csv", custom_shuttle_windows=None, max_shuttles=None, max_headcount=None, max_weekly_hours=48.0, auto_shuttle=False):
+def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None, shuttle_interval=60, sparse_mode=False, shuttle_capacity=16, templates_path="shift_templates.csv", custom_shuttle_windows=None, max_shuttles=None, max_headcount=None, max_weekly_hours=48.0, auto_shuttle=False, add_handover_buffer=False):
     # 1. Load data
     if not os.path.exists(csv_path):
         print(f"Error: {csv_path} not found. Run generate_data.py first.")
@@ -21,6 +21,23 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
     df = pd.read_csv(csv_path)
     required = df["required_headcount"].tolist()
     num_intervals = len(df) # 7 * 288 = 2016
+    
+    # 1.5 Apply Handover/Prep Buffer
+    final_required = required.copy()
+    if add_handover_buffer:
+        print("Applying 30-min prep/handover buffer...")
+        # Dilate the workload curve by +/- 30 mins (6 intervals)
+        buffer_steps = 6 
+        buffered = [0] * num_intervals
+        for i in range(num_intervals):
+            # Look ahead and behind to find the maximum requirement in the window
+            # This forces shifts to start early for ramp-ups and stay late for ramp-downs
+            window_vals = []
+            for offset in range(-buffer_steps, buffer_steps + 1):
+                idx = (i + offset) % num_intervals
+                window_vals.append(required[idx])
+            buffered[i] = max(window_vals)
+        final_required = buffered
     
     # 2. Define possible shifts & Shuttle Times
     if auto_shuttle:
@@ -123,8 +140,8 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
     for t in range(num_intervals):
         # Workload constraint
         if covers[t]:
-            prob += pulp.lpSum([shift_vars[sid] for sid in covers[t]]) >= required[t]
-        elif required[t] > 0:
+            prob += pulp.lpSum([shift_vars[sid] for sid in covers[t]]) >= final_required[t]
+        elif final_required[t] > 0:
             print(f"Warning: No possible shifts cover interval {t} ({times_list[t]})")
         
         # Shuttle logic only if it's a shuttle window

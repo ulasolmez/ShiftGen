@@ -22,6 +22,8 @@ max_hours_per_person = st.sidebar.number_input("Max Weekly Hours per Person", mi
 max_shuttles = st.sidebar.number_input("Maximum Weekly Shuttles", min_value=0, value=200, help="Warning only: Total sum of shuttle trips allowed.")
 shuttle_capacity = st.sidebar.number_input("Shuttle Capacity (Pax)", min_value=1, value=16)
 
+add_buffer = st.sidebar.checkbox("Apply 30-min Prep/Handover Buffer", value=False, help="Forces shifts to start 30 mins early or stay 30 mins late around workload peaks to allow for preparation and shift handovers.")
+
 st.sidebar.markdown("---")
 st.sidebar.subheader("🚐 Shuttle Timeline Selection")
 
@@ -72,7 +74,8 @@ with col2:
                 auto_shuttle=auto_shuttle,
                 custom_shuttle_windows=shuttle_windows,
                 shuttle_capacity=shuttle_capacity,
-                max_shuttles=max_shuttles
+                max_shuttles=max_shuttles,
+                add_handover_buffer=add_buffer
             )
             
             if result is not None:
