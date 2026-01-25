@@ -19,6 +19,25 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
         print(f"Error: {csv_path} not found. Run generate_data.py first.")
         return
     df = pd.read_csv(csv_path)
+
+    # Robust Column Handling:
+    # If standard columns are missing, assume the first 3 columns are [Day, Time, Headcount]
+    expected_cols = ["day_name", "time", "required_headcount"]
+    if not all(col in df.columns for col in expected_cols):
+        if len(df.columns) >= 3:
+            # Create a map of old names to new names for the first 3 columns
+            rename_map = {df.columns[0]: "day_name", df.columns[1]: "time", df.columns[2]: "required_headcount"}
+            df = df.rename(columns=rename_map)
+        else:
+            print("Error: Input CSV must have at least 3 columns (Day, Time, Headcount).")
+            return
+
+    # Internal Normalization: Ensure 'time' column is HH:MM (08:30 not 8:30)
+    # This prevents aggregation errors later if the input CSV is loosely formatted
+    if 'time' in df.columns:
+        df['time'] = df['time'].astype(str).apply(lambda x: x.split(" ")[-1]) # Remove date if present
+        df['time'] = df['time'].apply(lambda x: f"{int(x.split(':')[0]):02d}:{int(x.split(':')[1]):02d}" if ':' in x and len(x) < 5 else x)
+
     required = df["required_headcount"].tolist()
     num_intervals = len(df) # 7 * 288 = 2016
     
