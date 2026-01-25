@@ -80,14 +80,14 @@ with col1:
             df_edit = pd.read_csv("workload_weekly.csv")
             st.caption("Modify the required headcount for specific times.")
             
-            # Using st.data_editor for interactive grid
             edited_workload = st.data_editor(
                 df_edit, 
                 key="workload_editor", 
                 height=400, 
-                use_container_width=True,
+                width="stretch",
                 num_rows="dynamic"
             )
+
             
             if st.button("💾 Save Manual Changes"):
                 edited_workload.to_csv("workload_weekly.csv", index=False)
@@ -197,9 +197,9 @@ if os.path.exists("weekly_summary.csv"):
             _, fig_hourly, fig_daily = plot_weekly_results_interactive()
             c1, c2 = st.columns(2)
             if fig_daily:
-                c1.plotly_chart(fig_daily, use_container_width=True)
+                c1.plotly_chart(fig_daily, width="stretch")
             if fig_hourly:
-                c2.plotly_chart(fig_hourly, use_container_width=True)
+                c2.plotly_chart(fig_hourly, width="stretch")
 
     with tab3:
         st.write("### Daily Coverage Graphs")
@@ -209,6 +209,6 @@ if os.path.exists("weekly_summary.csv"):
             days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
             selected_day = st.selectbox("Select Day to View", days)
             if selected_day in daily_figs:
-                st.plotly_chart(daily_figs[selected_day], use_container_width=True)
+                st.plotly_chart(daily_figs[selected_day], width="stretch")
         else:
             st.info("Run the optimizer to generate graphs.")
