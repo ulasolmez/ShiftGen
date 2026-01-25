@@ -68,12 +68,27 @@ with col1:
         st.markdown("---")
 
         # 2. Upload
-        uploaded_workload = st.file_uploader("Upload Workload CSV", type=["csv"], help="Columns: day_name, time, required_headcount")
+        uploaded_workload = st.file_uploader("Upload Workload (CSV or Excel)", type=["csv", "xlsx"], help="Format: 3 Columns [Day, Time, Headcount]")
         if uploaded_workload:
-            df = pd.read_csv(uploaded_workload)
-            df.to_csv("workload_weekly.csv", index=False)
-            st.success("Workload imported!")
-            st.rerun()
+            try:
+                if uploaded_workload.name.endswith(".csv"):
+                    df = pd.read_csv(uploaded_workload)
+                else:
+                    df = pd.read_excel(uploaded_workload)
+                
+                # Basic validation or Standardization: Ensure 3 columns
+                if len(df.columns) >= 3:
+                     # Rename to internal standard just in case user has different headers
+                     # We assume order is Day, Time, Count based on user description
+                     df = df.iloc[:, :3] # Take first 3 cols only
+                     df.columns = ["day_name", "time", "required_headcount"]
+                     df.to_csv("workload_weekly.csv", index=False)
+                     st.success(f"Workload imported successfully! ({len(df)} rows)")
+                     st.rerun()
+                else:
+                     st.error("Uploaded file must have at least 3 columns: Day, Time, Headcount.")
+            except Exception as e:
+                st.error(f"Error reading file: {e}")
 
     with tab_edit:
         if current_workload_exists:
