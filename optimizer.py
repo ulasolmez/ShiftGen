@@ -13,7 +13,7 @@ def get_end_time_str(start_time_str, duration_hours):
     end_dt = start_dt + timedelta(hours=duration_hours)
     return end_dt.strftime("%H:%M")
 
-def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None, shuttle_interval=60, sparse_mode=False, shuttle_capacity=16, templates_path="shift_templates.csv", custom_shuttle_windows=None, max_shuttles=None, auto_shuttle=False):
+def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None, shuttle_interval=60, sparse_mode=False, shuttle_capacity=16, templates_path="shift_templates.csv", custom_shuttle_windows=None, max_shuttles=None, max_headcount=None, max_weekly_hours=48.0, auto_shuttle=False):
     # 1. Load data
     if not os.path.exists(csv_path):
         print(f"Error: {csv_path} not found. Run generate_data.py first.")
@@ -189,26 +189,36 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
     # 12-hour rest requirement in intervals (12h * 12 intervals/h = 144)
     REST_INTERVALS = 144
     
-    # Personnel is a list of their last shift end time
-    personnel_free_times = [] 
+    # Personnel is a list of dicts: {'end_time': int, 'weekly_hours': float, 'id': int}
+    personnel_pool = [] 
     roster_rows = []
 
     for shift in all_assigned_shifts:
         assigned = False
-        # Try to find a person who has rested enough
-        # We sort people by their free time to minimize headcount
-        personnel_free_times.sort()
-        for i, free_time in enumerate(personnel_free_times):
-            if shift["start"] >= free_time + REST_INTERVALS:
-                personnel_free_times[i] = shift["end"]
-                p_id = i + 1
-                assigned = True
-                break
+        # Try to find a person who has rested enough AND has not exceeded weekly hours
+        # Sort people by their end_time to reuse those available earliest, minimizing headcount
+        personnel_pool.sort(key=lambda x: x['end_time'])
+        
+        for p in personnel_pool:
+            # Check 1: Rest Constraint
+            if shift["start"] >= p['end_time'] + REST_INTERVALS:
+                # Check 2: Max Hours Constraint
+                if p['weekly_hours'] + shift['duration'] <= max_weekly_hours:
+                    p['end_time'] = shift["end"]
+                    p['weekly_hours'] += shift["duration"]
+                    p_id = p['id']
+                    assigned = True
+                    break
         
         if not assigned:
             # Need a new person
-            personnel_free_times.append(shift["end"])
-            p_id = len(personnel_free_times)
+            new_id = len(personnel_pool) + 1
+            personnel_pool.append({
+                'id': new_id,
+                'end_time': shift["end"],
+                'weekly_hours': shift["duration"]
+            })
+            p_id = new_id
             
         roster_rows.append({
             "Personnel_ID": f"EMP_{p_id:03d}",
@@ -219,7 +229,7 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
         })
 
     # Summary Stats
-    total_unique_personnel = len(personnel_free_times)
+    total_unique_personnel = len(personnel_pool)
     
     # 6. Save Outputs
     pd.DataFrame(roster_rows).to_csv("personnel_roster_weekly.csv", index=False)
@@ -262,7 +272,8 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
         "Headcount": total_unique_personnel,
         "Unique Personnel Needed": total_unique_personnel,
         "Total Weekly Shuttles": sum(x['Total_Shuttles'] for x in shuttle_data), 
-        "Max FTE Allowed": max_fte
+        "Max FTE Allowed": max_fte,
+        "Max Headcount Allowed": max_headcount if max_headcount else "Unlimited"
     }]).to_csv("weekly_summary.csv", index=False)
 
     day_order = {day: i for i, day in enumerate(days)}

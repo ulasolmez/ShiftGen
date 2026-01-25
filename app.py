@@ -17,6 +17,8 @@ This tool calculates the minimum personnel required to cover a weekly workload c
 # --- Sidebar: Parameters ---
 st.sidebar.header("Parameters & Constraints")
 max_fte = st.sidebar.number_input("Maximum allowed FTE", min_value=0.0, value=80.0, help="FTE = Total Hours / 45")
+max_headcount = st.sidebar.number_input("Maximum Headcount", min_value=0, value=0, help="Optional: Hard limit on unique personnel. Set to 0 for unlimited.")
+max_hours_per_person = st.sidebar.number_input("Max Weekly Hours per Person", min_value=1.0, value=48.0, step=0.5, help="Constraint: An employee cannot be assigned more than these hours.")
 max_shuttles = st.sidebar.number_input("Maximum Weekly Shuttles", min_value=0, value=200, help="Warning only: Total sum of shuttle trips allowed.")
 shuttle_capacity = st.sidebar.number_input("Shuttle Capacity (Pax)", min_value=1, value=16)
 
@@ -65,6 +67,8 @@ with col2:
         with st.spinner("Calculating optimal shifts..."):
             result = solve_weekly_shift_optimization(
                 max_fte=max_fte,
+                max_headcount=max_headcount if max_headcount > 0 else None,
+                max_weekly_hours=max_hours_per_person,
                 auto_shuttle=auto_shuttle,
                 custom_shuttle_windows=shuttle_windows,
                 shuttle_capacity=shuttle_capacity,
@@ -93,6 +97,9 @@ if os.path.exists("weekly_summary.csv"):
     # Validation Warning
     if summary.iloc[0]['Total Weekly Shuttles'] > max_shuttles:
         st.warning(f"⚠️ Actual shuttles ({int(summary.iloc[0]['Total Weekly Shuttles'])}) exceed the maximum limit of {max_shuttles} set in sidebar.")
+        
+    if max_headcount > 0 and int(summary.iloc[0]['Headcount']) > max_headcount:
+        st.error(f"⚠️ Actual headcount ({int(summary.iloc[0]['Headcount'])}) exceeds the limit of {max_headcount}.")
 
     tab1, tab2, tab3 = st.tabs(["📅 Personnel Roster", "🚐 Shuttle Logistics", "📈 Visualization"])
 
