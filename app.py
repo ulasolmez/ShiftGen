@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 import subprocess
+from io import BytesIO
 from generate_data import generate_sample_workload
 from optimizer import solve_weekly_shift_optimization
 from visualize_interactive import plot_weekly_results_interactive
@@ -137,6 +138,44 @@ if os.path.exists("weekly_summary.csv"):
         
     if max_headcount > 0 and int(summary.iloc[0]['Headcount']) > max_headcount:
         st.error(f"⚠️ Actual headcount ({int(summary.iloc[0]['Headcount'])}) exceeds the limit of {max_headcount}.")
+
+    # --- Excel Report Generation ---
+    def generate_excel():
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            # 1. Summary Sheet
+            summary.to_excel(writer, sheet_name='Summary', index=False)
+            
+            # 2. Roster Sheet
+            if os.path.exists("personnel_roster_weekly.csv"):
+                df_roster = pd.read_csv("personnel_roster_weekly.csv")
+                df_roster.to_excel(writer, sheet_name='People Roster', index=False)
+                
+                # 3. Unique Shift Types Sheet
+                if 'Start' in df_roster.columns and 'End' in df_roster.columns:
+                    # Count frequency of each shift type
+                    unique_shifts = df_roster.groupby(['Start', 'End']).size().reset_index(name='Total Assigned')
+                    unique_shifts = unique_shifts.sort_values('Start')
+                    unique_shifts.to_excel(writer, sheet_name='Shift Types', index=False)
+            
+            # 4. Shuttle Report
+            if os.path.exists("shuttle_report_weekly.csv"):
+                df_shuttle = pd.read_csv("shuttle_report_weekly.csv")
+                df_shuttle.to_excel(writer, sheet_name='Shuttles', index=False)
+
+            # 5. Workload
+            if os.path.exists("workload_weekly.csv"):
+                pd.read_csv("workload_weekly.csv").to_excel(writer, sheet_name='Workload Input', index=False)
+                
+        return output.getvalue()
+
+    st.download_button(
+        label="📥 Download Full Excel Report (XLSX)",
+        data=generate_excel(),
+        file_name="ShiftGen_Weekly_Report.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        help="Contains Summary, Roster, Shift Types, Shuttles, and Workload data in separate sheets."
+    )
 
     tab1, tab2, tab3 = st.tabs(["📅 Personnel Roster", "🚐 Shuttle Logistics", "📈 Visualization"])
 
