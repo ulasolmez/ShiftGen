@@ -20,23 +20,24 @@ def plot_weekly_results_interactive(coverage_csv="weekly_coverage_comparison.csv
             
         fig = go.Figure()
         
-        # Workload Area (Filled)
+        # Workload (Line)
         fig.add_trace(go.Scatter(
             x=day_data['time'], 
             y=day_data['required_headcount'],
-            fill='tozeroy',
-            mode='none',
+            mode='lines',
             name='Required Workload',
-            fillcolor='rgba(255, 0, 0, 0.2)'
+            line=dict(color='red', width=2, dash='solid')
         ))
         
-        # Coverage Line (Step)
+        # Coverage Area (Filled)
         fig.add_trace(go.Scatter(
             x=day_data['time'], 
             y=day_data['actual_coverage'],
+            fill='tozeroy',
             mode='lines',
             name='Staff Coverage',
-            line=dict(color='blue', width=2, shape='hv')
+            line=dict(color='blue', width=2, shape='hv'),
+            fillcolor='rgba(0, 0, 255, 0.2)'
         ))
         
         fig.update_layout(
