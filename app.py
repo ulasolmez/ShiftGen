@@ -68,40 +68,12 @@ with col1:
         st.markdown("---")
 
         # 2. Upload
-        uploaded_workload = st.file_uploader("Upload Workload CSV", type=["csv"], help="Format: 3 Columns [Day, Time, Headcount]")
+        uploaded_workload = st.file_uploader("Upload Workload CSV", type=["csv"], help="Columns: day_name, time, required_headcount")
         if uploaded_workload:
-            try:
-                df = pd.read_csv(uploaded_workload)
-                
-                # Basic validation or Standardization: Ensure 3 columns
-                if len(df.columns) >= 3:
-                     # Take first 3 cols only
-                     df = df.iloc[:, :3] 
-                     df.columns = ["day_name", "time", "required_headcount"]
-                     
-                     # standardize time column string format to HH:MM (pad hour, remove seconds)
-                     def normalize_time_str(t):
-                         s = str(t).strip()
-                         # Handle default datetime string "1900-01-01 08:30:00" or simple "08:30:00"
-                         if " " in s:
-                             s = s.split(" ")[-1]
-                         # Handle "08:30:00" -> "08:30"
-                         parts = s.split(":")
-                         if len(parts) >= 2:
-                             h = int(parts[0])
-                             m = int(parts[1])
-                             return f"{h:02d}:{m:02d}"
-                         return s
-
-                     df['time'] = df['time'].apply(normalize_time_str)
-
-                     df.to_csv("workload_weekly.csv", index=False)
-                     st.success(f"Workload imported successfully! ({len(df)} rows)")
-                     st.rerun()
-                else:
-                     st.error("Uploaded file must have at least 3 columns: Day, Time, Headcount.")
-            except Exception as e:
-                st.error(f"Error reading file: {e}")
+            df = pd.read_csv(uploaded_workload)
+            df.to_csv("workload_weekly.csv", index=False)
+            st.success("Workload imported!")
+            st.rerun()
 
     with tab_edit:
         if current_workload_exists:
