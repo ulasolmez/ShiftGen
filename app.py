@@ -4,8 +4,7 @@ import os
 import subprocess
 from generate_data import generate_sample_workload
 from optimizer import solve_weekly_shift_optimization
-from visualize import plot_weekly_results
-from shuttle_visualizer import create_shuttle_report
+from visualize_interactive import plot_weekly_results_interactive
 
 st.set_page_config(page_title="ShiftGen: Personnel Optimizer", layout="wide")
 
@@ -21,6 +20,11 @@ max_headcount = st.sidebar.number_input("Maximum Headcount", min_value=0, value=
 max_hours_per_person = st.sidebar.number_input("Max Weekly Hours per Person", min_value=1.0, value=48.0, step=0.5, help="Constraint: An employee cannot be assigned more than these hours.")
 max_shuttles = st.sidebar.number_input("Maximum Weekly Shuttles", min_value=0, value=200, help="Warning only: Total sum of shuttle trips allowed.")
 shuttle_capacity = st.sidebar.number_input("Shuttle Capacity (Pax)", min_value=1, value=16)
+
+st.sidebar.markdown("### ⏱️ Shift Constraints")
+c_min, c_max = st.sidebar.columns(2)
+min_shift_len = c_min.number_input("Min Shift (Hrs)", 4.0, 12.0, 4.0, 0.5)
+max_shift_len = c_max.number_input("Max Shift (Hrs)", 4.0, 12.0, 11.0, 0.5)
 
 add_buffer = st.sidebar.checkbox("Apply 30-min Prep/Handover Buffer", value=False, help="Forces shifts to start 30 mins early or stay 30 mins late around workload peaks to allow for preparation and shift handovers.")
 peak_cutting = st.sidebar.checkbox("Ignore Short-Duration Peak Spikes", value=False, help="Smoothes out very short workload spikes (less than 30 mins) to avoid hiring extra staff for momentary fluctuations.")
@@ -72,6 +76,8 @@ with col2:
                 max_fte=max_fte,
                 max_headcount=max_headcount if max_headcount > 0 else None,
                 max_weekly_hours=max_hours_per_person,
+                min_shift_length=min_shift_len,
+                max_shift_length=max_shift_len,
                 auto_shuttle=auto_shuttle,
                 custom_shuttle_windows=shuttle_windows,
                 shuttle_capacity=shuttle_capacity,
@@ -82,9 +88,9 @@ with col2:
             
             if result is not None:
                 st.success("Optimization Successful!")
-                # Generate plots
-                plot_weekly_results()
-                create_shuttle_report()
+                # Generate plots (interactive)
+                # plot_weekly_results() # Old static plots
+                # create_shuttle_report() # Old static plots
             else:
                 st.error("Optimization failed. Try increasing Max FTE or relaxing constraints.")
 
@@ -122,18 +128,22 @@ if os.path.exists("weekly_summary.csv"):
             st.dataframe(shuttle, height=400)
             st.download_button("📥 Download Shuttle Report", shuttle.to_csv(index=False), "shuttle_report_weekly.csv", "text/csv")
             
+            # Interactive Shuttle Charts
+            _, fig_hourly, fig_daily = plot_weekly_results_interactive()
             c1, c2 = st.columns(2)
-            if os.path.exists("shuttle_daily_totals.png"):
-                c1.image("shuttle_daily_totals.png", caption="Daily Shuttle Totals")
-            if os.path.exists("shuttle_hourly_distribution.png"):
-                c2.image("shuttle_hourly_distribution.png", caption="Hourly Shuttle Load")
+            if fig_daily:
+                c1.plotly_chart(fig_daily, use_container_width=True)
+            if fig_hourly:
+                c2.plotly_chart(fig_hourly, use_container_width=True)
 
     with tab3:
         st.write("### Daily Coverage Graphs")
-        days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-        selected_day = st.selectbox("Select Day to View", days)
-        graph_path = f"graphs/optimization_{selected_day}.png"
-        if os.path.exists(graph_path):
-            st.image(graph_path, width='stretch')
+        daily_figs, _, _ = plot_weekly_results_interactive()
+        
+        if daily_figs:
+            days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+            selected_day = st.selectbox("Select Day to View", days)
+            if selected_day in daily_figs:
+                st.plotly_chart(daily_figs[selected_day], use_container_width=True)
         else:
             st.info("Run the optimizer to generate graphs.")

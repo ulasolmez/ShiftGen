@@ -13,7 +13,7 @@ def get_end_time_str(start_time_str, duration_hours):
     end_dt = start_dt + timedelta(hours=duration_hours)
     return end_dt.strftime("%H:%M")
 
-def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None, shuttle_interval=60, sparse_mode=False, shuttle_capacity=16, templates_path="shift_templates.csv", custom_shuttle_windows=None, max_shuttles=None, max_headcount=None, max_weekly_hours=48.0, auto_shuttle=False, add_handover_buffer=False, apply_peak_cutting=False):
+def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None, shuttle_interval=60, sparse_mode=False, shuttle_capacity=16, templates_path="shift_templates.csv", custom_shuttle_windows=None, max_shuttles=None, max_headcount=None, max_weekly_hours=48.0, min_shift_length=4.0, max_shift_length=11.0, auto_shuttle=False, add_handover_buffer=False, apply_peak_cutting=False):
     # 1. Load data
     if not os.path.exists(csv_path):
         print(f"Error: {csv_path} not found. Run generate_data.py first.")
@@ -108,10 +108,14 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
                     "global_end_idx": (global_start_idx + duration_intervals) % num_intervals
                 })
         else:
+            # Generate possible shift durations based on min/max constraints
+            # We step by 0.5 hours (30 mins)
+            possible_durations = [d * 0.5 for d in range(int(min_shift_length * 2), int(max_shift_length * 2) + 1)]
+            
             for start_time_str in shuttle_windows:
                 h, m = map(int, start_time_str.split(":"))
                 global_start_idx = day_idx * 288 + (h * 12 + m // 5)
-                for duration_hours in [h * 0.5 for h in range(8, 23)]:
+                for duration_hours in possible_durations:
                     end_time_str = get_end_time_str(start_time_str, duration_hours)
                     if end_time_str not in shuttle_windows:
                         continue
