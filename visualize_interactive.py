@@ -36,8 +36,7 @@ def plot_weekly_results_interactive(coverage_csv="weekly_coverage_comparison.csv
             y=day_data['actual_coverage'],
             mode='lines',
             name='Staff Coverage',
-            line=dict(color='blue', width=2),
-            step='hv'
+            line=dict(color='blue', width=2, shape='hv')
         ))
         
         fig.update_layout(
