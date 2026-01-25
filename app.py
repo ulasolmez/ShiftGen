@@ -77,21 +77,24 @@ with col1:
 
     with tab_edit:
         if current_workload_exists:
-            df_edit = pd.read_csv("workload_weekly.csv")
-            st.caption("Modify the required headcount for specific times.")
-            
-            edited_workload = st.data_editor(
-                df_edit, 
-                key="workload_editor", 
-                height=400, 
-                width="stretch",
-                num_rows="dynamic"
-            )
-
-            
-            if st.button("💾 Save Manual Changes"):
-                edited_workload.to_csv("workload_weekly.csv", index=False)
-                st.success("Changes saved to 'workload_weekly.csv'!")
+            try:
+                df_edit = pd.read_csv("workload_weekly.csv")
+                st.caption("Modify the required headcount for specific times.")
+                
+                edited_workload = st.data_editor(
+                    df_edit, 
+                    key="workload_editor", 
+                    height=400, 
+                    width="stretch",
+                    num_rows="dynamic"
+                )
+                
+                if st.button("💾 Save Manual Changes"):
+                    edited_workload.to_csv("workload_weekly.csv", index=False)
+                    st.success("Changes saved to 'workload_weekly.csv'!")
+            except Exception as e:
+                st.error(f"Error reading workload file: {e}")
+                st.warning("The current workload file appears corrupted or has inconsistent formatting (e.g., extra commas). Please generate a new random workload or upload a valid CSV in the Import tab.")
         else:
             st.warning("No workload data found. Please Generate or Upload first.")
 
