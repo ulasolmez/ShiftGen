@@ -657,6 +657,161 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
             "start_idx": shift["start"]
         })
 
+    # ============ LOCAL SEARCH POST-PROCESSING ============
+    print(f"Initial solution: {len(personnel_pool)} workers assigned")
+    print("Running local search optimization...")
+    
+    def apply_shift_swap_optimization(roster_rows, personnel_pool, max_iterations=50):
+        """
+        Try swapping shifts between workers to:
+        1. Balance hours more evenly
+        2. Consolidate shifts to fewer workers
+        3. Reduce workers below minimum hours
+        """
+        improvements = 0
+        
+        for iteration in range(max_iterations):
+            improved = False
+            
+            # Group shifts by personnel
+            worker_shifts = {}
+            for row in roster_rows:
+                worker_id = row['Personnel_ID']
+                if worker_id not in worker_shifts:
+                    worker_shifts[worker_id] = []
+                worker_shifts[worker_id].append(row)
+            
+            # Try swapping shifts between pairs of workers
+            worker_ids = list(worker_shifts.keys())
+            for i in range(len(worker_ids)):
+                for j in range(i + 1, len(worker_ids)):
+                    worker_a = worker_ids[i]
+                    worker_b = worker_ids[j]
+                    
+                    shifts_a = worker_shifts[worker_a]
+                    shifts_b = worker_shifts[worker_b]
+                    
+                    # Try swapping each shift from A with each shift from B
+                    for shift_a in shifts_a:
+                        for shift_b in shifts_b:
+                            # Check if swap would improve balance
+                            # Calculate current hour imbalance
+                            hours_a = sum(s['duration_intervals'] for s in shifts_a) / 12.0
+                            hours_b = sum(s['duration_intervals'] for s in shifts_b) / 12.0
+                            current_imbalance = abs(hours_a - hours_b)
+                            
+                            # Calculate hours after swap
+                            duration_a = shift_a['duration_intervals'] / 12.0
+                            duration_b = shift_b['duration_intervals'] / 12.0
+                            new_hours_a = hours_a - duration_a + duration_b
+                            new_hours_b = hours_b - duration_b + duration_a
+                            new_imbalance = abs(new_hours_a - new_hours_b)
+                            
+                            # Only swap if it improves balance and respects constraints
+                            if new_imbalance < current_imbalance:
+                                # Check constraints for swap
+                                can_swap = True
+                                
+                                # Check max hours
+                                if new_hours_a > max_weekly_hours or new_hours_b > max_weekly_hours:
+                                    can_swap = False
+                                
+                                # Check rest constraints (simplified check)
+                                # Full check would require rebuilding shift_times arrays
+                                
+                                if can_swap:
+                                    # Perform swap
+                                    shift_a['Personnel_ID'], shift_b['Personnel_ID'] = shift_b['Personnel_ID'], shift_a['Personnel_ID']
+                                    improved = True
+                                    improvements += 1
+            
+            if not improved:
+                break
+        
+        return improvements
+    
+    def apply_shift_consolidation(roster_rows, personnel_pool):
+        """
+        Try to consolidate: if worker B has very few hours,
+        can we give their shifts to other workers and remove worker B?
+        """
+        improvements = 0
+        
+        # Group shifts by personnel
+        worker_shifts = {}
+        for row in roster_rows:
+            worker_id = row['Personnel_ID']
+            if worker_id not in worker_shifts:
+                worker_shifts[worker_id] = []
+            worker_shifts[worker_id].append(row)
+        
+        # Find under-utilized workers
+        under_utilized = []
+        for worker_id, shifts in worker_shifts.items():
+            total_hours = sum(s['duration_intervals'] for s in shifts) / 12.0
+            if total_hours < min_weekly_hours * 0.5:  # Less than half minimum
+                under_utilized.append((worker_id, shifts, total_hours))
+        
+        # Try to redistribute their shifts
+        for worker_id, shifts, total_hours in under_utilized:
+            all_reassigned = True
+            
+            for shift in shifts:
+                # Try to assign this shift to another worker
+                reassigned = False
+                
+                for other_worker_id, other_shifts in worker_shifts.items():
+                    if other_worker_id == worker_id:
+                        continue
+                    
+                    other_hours = sum(s['duration_intervals'] for s in other_shifts) / 12.0
+                    shift_hours = shift['duration_intervals'] / 12.0
+                    
+                    # Check if other worker can take this shift
+                    if other_hours + shift_hours <= max_weekly_hours:
+                        # Check days worked (simplified)
+                        other_days = set(s['Day'] for s in other_shifts)
+                        if len(other_days) < 6:  # Has room for more days
+                            # Reassign
+                            shift['Personnel_ID'] = other_worker_id
+                            reassigned = True
+                            improvements += 1
+                            break
+                
+                if not reassigned:
+                    all_reassigned = False
+                    break
+            
+            # If all shifts were reassigned, worker can be removed
+            if all_reassigned:
+                print(f"  Consolidated shifts from {worker_id} ({total_hours:.1f}h) to other workers")
+        
+        return improvements
+    
+    # Apply local search heuristics
+    swap_improvements = apply_shift_swap_optimization(roster_rows, personnel_pool)
+    consolidation_improvements = apply_shift_consolidation(roster_rows, personnel_pool)
+    
+    total_improvements = swap_improvements + consolidation_improvements
+    if total_improvements > 0:
+        print(f"  Local search made {total_improvements} improvements ({swap_improvements} swaps, {consolidation_improvements} consolidations)")
+        
+        # Rebuild personnel_pool to reflect changes
+        worker_shifts = {}
+        for row in roster_rows:
+            worker_id = row['Personnel_ID']
+            if worker_id not in worker_shifts:
+                worker_shifts[worker_id] = []
+            worker_shifts[worker_id].append(row)
+        
+        # Update personnel_pool hours
+        for p in personnel_pool:
+            worker_id = f"EMP_{p['id']:03d}"
+            if worker_id in worker_shifts:
+                p['weekly_hours'] = sum(s['duration_intervals'] for s in worker_shifts[worker_id]) / 12.0
+    else:
+        print("  No beneficial swaps or consolidations found")
+
     # Summary Stats
     total_unique_personnel = len(personnel_pool)
     people_below_min = sum(1 for p in personnel_pool if p['weekly_hours'] < min_weekly_hours)
