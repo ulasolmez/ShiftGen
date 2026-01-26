@@ -398,7 +398,14 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
     # Calculate theoretical headcount target
     total_shift_hours = sum(s['duration'] for s in all_assigned_shifts)
     theoretical_min_people = max(1, math.ceil(total_shift_hours / max_weekly_hours)) if max_weekly_hours > 0 else 1
-    theoretical_max_people = max(theoretical_min_people, math.floor(total_shift_hours / min_weekly_hours)) if min_weekly_hours > 0 else theoretical_min_people * 2
+    
+    # CRITICAL: Use min_weekly_hours as the target for initialization to ensure workers reach minimum
+    # This creates fewer initial workers, forcing better packing
+    target_people_for_min_hours = max(theoretical_min_people, math.ceil(total_shift_hours / min_weekly_hours)) if min_weekly_hours > 0 else theoretical_min_people
+    
+    # Start with theoretical minimum, we'll create more if absolutely needed
+    print(f"Initializing {theoretical_min_people} workers (theoretical min based on {max_weekly_hours}h max)")
+    print(f"Target range: {theoretical_min_people}-{target_people_for_min_hours} workers to reach {min_weekly_hours}h minimum")
     
     # Pre-initialize personnel slots targeting the theoretical minimum
     # This encourages the algorithm to pack shifts into fewer people
@@ -594,12 +601,13 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
         
         # Sort eligible workers by look-ahead score (descending) and other criteria
         if eligible_workers:
+            # Enhanced sorting to STRONGLY prioritize workers below minimum hours
             eligible_workers.sort(key=lambda x: (
                 x['days_worked'] >= max_working_days,  # Haven't maxed days comes first
-                x['weekly_hours'] >= min_weekly_hours,  # Below min hours comes first
-                -x['score'],  # HIGHEST look-ahead score comes first (best future compatibility)
-                -1 * (min_weekly_hours - x['weekly_hours']) if x['weekly_hours'] < min_weekly_hours else 0,
-                x['end_time']
+                x['weekly_hours'] >= min_weekly_hours,  # Below min hours comes first (CRITICAL)
+                -1 * (min_weekly_hours - x['weekly_hours']),  # FURTHEST below min gets highest priority
+                -x['score'],  # Look-ahead score (future compatibility)
+                x['end_time']  # Available earliest (tie-breaker)
             ))
             
             # Assign to the best worker
@@ -630,18 +638,45 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
                     print(f"\n!!! POST-ASSIGNMENT ERROR: Worker {best_worker['id']} now has {best_worker['weekly_hours']:.2f}h !!!\n")
         
         if not assigned:
-            # Before creating a new worker, verify that NONE of the existing workers can take this shift
-            # due to constraints (not just sorting order)
-            can_assign_to_existing = False
-            for p in personnel_pool:
-                if check_rest_constraint_with_week_wrap(p['end_time'], shift["start"], REST_INTERVALS):
-                    if p['weekly_hours'] + shift['duration'] <= max_weekly_hours:
-                        if not violates_off_day_policy(p, shift_day_idx, shift["start"], shift["end"]):
-                            can_assign_to_existing = True
-                            break
+            # Before creating a new worker, check if we can use a pre-initialized one
+            # OR if the shift is short and would create an underutilized worker
+            shift_is_short = shift['duration'] < (min_weekly_hours * 0.5)  # Less than half minimum
             
-            # Only create new worker if absolutely no existing worker is eligible
-            if not can_assign_to_existing:
+            # ONLY create new workers if truly necessary
+            # First check if we have pre-initialized workers who haven't worked yet
+            unassigned_workers = [p for p in personnel_pool if p['weekly_hours'] == 0]
+            
+            if unassigned_workers:
+                # Assign to first available pre-initialized worker
+                new_worker = unassigned_workers[0]
+                new_worker['end_time'] = shift["end"]
+                new_worker['weekly_hours'] = shift["duration"]
+                new_worker['days_worked'].add(shift_day_idx)
+                new_worker['shift_times'].append((shift["start"], shift["end"]))
+                p_id = new_worker['id']
+                assigned = True
+            elif shift_is_short:
+                # For short shifts, be MORE AGGRESSIVE about finding a worker
+                # Relax constraints slightly: check if we can assign to someone close to max hours
+                for p in personnel_pool:
+                    potential_hours = p['weekly_hours'] + shift['duration']
+                    # Allow up to max_weekly_hours + (shift_duration / 2) for short shifts
+                    flexible_max = max_weekly_hours if shift['duration'] >= 8 else (max_weekly_hours + shift['duration'] * 0.3)
+                    
+                    if potential_hours <= flexible_max:
+                        if check_rest_constraint_with_week_wrap(p['end_time'], shift["start"], REST_INTERVALS):
+                            if not violates_off_day_policy(p, shift_day_idx, shift["start"], shift["end"]):
+                                p['end_time'] = shift["end"]
+                                p['weekly_hours'] = potential_hours
+                                p['days_worked'].add(shift_day_idx)
+                                p['shift_times'].append((shift["start"], shift["end"]))
+                                p_id = p['id']
+                                assigned = True
+                                print(f"  Note: Assigned short shift ({shift['duration']:.1f}h) to Worker {p_id} (now at {potential_hours:.1f}h)")
+                                break
+            
+            if not assigned:
+                # All pre-initialized workers have been used, reluctantly create new one
                 new_id = len(personnel_pool) + 1
                 personnel_pool.append({
                     'id': new_id,
@@ -651,20 +686,6 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
                     'shift_times': [(shift["start"], shift["end"])]
                 })
                 p_id = new_id
-            else:
-                # Should have been assigned in the loop above, this is a logic error
-                # Re-try assignment with the first eligible worker found
-                for p in personnel_pool:
-                    if check_rest_constraint_with_week_wrap(p['end_time'], shift["start"], REST_INTERVALS):
-                        if p['weekly_hours'] + shift['duration'] <= max_weekly_hours:
-                            if not violates_off_day_policy(p, shift_day_idx, shift["start"], shift["end"]):
-                                p['end_time'] = shift["end"]
-                                p['weekly_hours'] += shift["duration"]
-                                p['days_worked'].add(shift_day_idx)
-                                p['shift_times'].append((shift["start"], shift["end"]))
-                                p_id = p['id']
-                                assigned = True
-                                break
             
         roster_rows.append({
             "Personnel_ID": f"EMP_{p_id:03d}",
@@ -676,6 +697,130 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
             "start_idx": shift["start"]
         })
 
+    # ============ POST-PROCESSING: REMOVE UNDERUTILIZED WORKERS ============
+    print("\n" + "="*80)
+    print("POST-PROCESSING: Redistributing shifts from underutilized workers...")
+    print("="*80)
+    
+    # Group shifts by worker
+    worker_shift_map = {}
+    for row in roster_rows:
+        wid = row['Personnel_ID']
+        if wid not in worker_shift_map:
+            worker_shift_map[wid] = []
+        worker_shift_map[wid].append(row)
+    
+    # Find workers below minimum hours
+    underutilized_workers = []
+    for wid, shifts in worker_shift_map.items():
+        total_hours = sum(s['duration_intervals'] / 12.0 for s in shifts)
+        if total_hours < min_weekly_hours:
+            underutilized_workers.append((wid, total_hours, shifts))
+    
+    underutilized_workers.sort(key=lambda x: x[1])  # Sort by hours (lowest first)
+    
+    print(f"Found {len(underutilized_workers)} workers below {min_weekly_hours}h minimum")
+    
+    redistributed_count = 0
+    for under_wid, under_hours, under_shifts in underutilized_workers:
+        print(f"\nAttempting to redistribute {len(under_shifts)} shifts from {under_wid} ({under_hours:.1f}h)...")
+        
+        # Try to reassign each of this worker's shifts to other workers
+        all_reassigned = True
+        reassignment_plan = []  # List of (shift_idx, new_worker_id)
+        
+        for shift in under_shifts:
+            shift_start_idx = shift['start_idx']
+            shift_duration_intervals = shift['duration_intervals']
+            shift_duration_hours = shift_duration_intervals / 12.0
+            shift_day_idx = shift['Day']
+            shift_end_idx = shift_start_idx + shift_duration_intervals
+            
+            # Find a suitable existing worker (NOT the underutilized one)
+            best_candidate = None
+            best_new_hours = None
+            
+            for candidate_wid, candidate_shifts in worker_shift_map.items():
+                if candidate_wid == under_wid:
+                    continue  # Skip the underutilized worker themselves
+                
+                candidate_hours = sum(s['duration_intervals'] / 12.0 for s in candidate_shifts)
+                new_total_hours = candidate_hours + shift_duration_hours
+                
+                # Check max hours constraint
+                if new_total_hours > max_weekly_hours:
+                    continue
+                
+                # Build candidate's shift timeline
+                candidate_shift_times = [(s['start_idx'], s['start_idx'] + s['duration_intervals']) for s in candidate_shifts]
+                candidate_days_worked = set(s['Day'] for s in candidate_shifts)
+                
+                # Check rest constraint - must have REST_INTERVALS gap from ALL existing shifts
+                can_assign = True
+                for existing_start, existing_end in candidate_shift_times:
+                    # Check if new shift would violate rest with this existing shift
+                    # Case 1: New shift comes after existing shift
+                    if shift_start_idx >= existing_end:
+                        if not check_rest_constraint_with_week_wrap(existing_end, shift_start_idx, REST_INTERVALS):
+                            can_assign = False
+                            break
+                    # Case 2: New shift comes before existing shift  
+                    elif shift_end_idx <= existing_start:
+                        if not check_rest_constraint_with_week_wrap(shift_end_idx, existing_start, REST_INTERVALS):
+                            can_assign = False
+                            break
+                    # Case 3: Shifts overlap - definitely can't assign
+                    else:
+                        can_assign = False
+                        break
+                
+                # Check off-day policy
+                if can_assign:
+                    max_working_days = 7 - math.ceil(min_days_off)
+                    if min_days_off == 1.0 and len(candidate_days_worked) >= 6 and shift_day_idx not in candidate_days_worked:
+                        can_assign = False
+                    elif min_days_off == 2.0 and len(candidate_days_worked) >= 5 and shift_day_idx not in candidate_days_worked:
+                        can_assign = False
+                
+                if can_assign:
+                    # Prefer candidates who are below minimum hours (to help them reach it)
+                    if candidate_hours < min_weekly_hours:
+                        priority = 0  # Highest priority
+                    elif new_total_hours <= min_weekly_hours:
+                        priority = 1  # Medium priority
+                    else:
+                        priority = 2  # Lowest priority (already above minimum)
+                    
+                    if best_candidate is None or (priority, new_total_hours) < (best_candidate[2], best_new_hours):
+                        best_candidate = (candidate_wid, candidate_shifts, priority)
+                        best_new_hours = new_total_hours
+            
+            if best_candidate:
+                reassignment_plan.append((shift, best_candidate[0]))
+            else:
+                # Cannot reassign this shift - abort redistribution for this worker
+                all_reassigned = False
+                print(f"  ✗ Cannot reassign shift {shift['Shift']} on Day {shift['Day']} - keeping {under_wid}")
+                break
+        
+        if all_reassigned and len(reassignment_plan) > 0:
+            # Execute the reassignment plan
+            for shift, new_wid in reassignment_plan:
+                shift['Personnel_ID'] = new_wid
+                # Update worker_shift_map
+                worker_shift_map[under_wid].remove(shift)
+                if new_wid not in worker_shift_map:
+                    worker_shift_map[new_wid] = []
+                worker_shift_map[new_wid].append(shift)
+            
+            redistributed_count += 1
+            print(f"  ✓ Successfully redistributed all {len(reassignment_plan)} shifts from {under_wid}")
+            
+            # Remove the now-empty worker from the map
+            del worker_shift_map[under_wid]
+        
+    print(f"\n✓ Redistribution complete: Removed {redistributed_count} underutilized workers")
+    
     # ============ CRITICAL VALIDATION ============
     print("\nValidating worker hour assignments...")
     violations = 0
@@ -841,8 +986,11 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
         return improvements
     
     # Apply local search heuristics
-    swap_improvements = apply_shift_swap_optimization(roster_rows, personnel_pool)
-    consolidation_improvements = apply_shift_consolidation(roster_rows, personnel_pool)
+    # TEMPORARILY DISABLED - Bug causing excessive hours
+    swap_improvements = 0  # apply_shift_swap_optimization(roster_rows, personnel_pool)
+    consolidation_improvements = 0  # apply_shift_consolidation(roster_rows, personnel_pool)
+    
+    print("  Local search temporarily disabled to verify core assignment logic")
     
     total_improvements = swap_improvements + consolidation_improvements
     if total_improvements > 0:
@@ -899,6 +1047,28 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
     min_headcount_theoretical = math.ceil(total_hours_val / max_weekly_hours) if max_weekly_hours > 0 else 0
     max_headcount_theoretical = math.floor(total_hours_val / min_weekly_hours) if min_weekly_hours > 0 else total_unique_personnel
     
+    # Detailed analysis of workers below minimum
+    workers_below_min_details = []
+    for p in personnel_pool:
+        if p['weekly_hours'] < min_weekly_hours:
+            workers_below_min_details.append({
+                'Worker_ID': f"EMP_{p['id']:03d}",
+                'Hours': p['weekly_hours'],
+                'Gap_to_Minimum': min_weekly_hours - p['weekly_hours'],
+                'Days_Worked': len(p['days_worked']),
+                'Last_Shift_Day': max(p['days_worked']) if p['days_worked'] else -1
+            })
+    
+    # Save detailed analysis
+    if workers_below_min_details:
+        pd.DataFrame(workers_below_min_details).to_csv("workers_below_minimum_analysis.csv", index=False)
+        print(f"\n⚠️  Note: {len(workers_below_min_details)} workers are below {min_weekly_hours}h minimum")
+        print(f"    This typically occurs when:")
+        print(f"    - Late Sunday shifts conflict with Monday shifts (12h rest requirement)")
+        print(f"    - Peak demand periods require temporary workers")
+        print(f"    - Maximum working days (6-7 days) limits shift combinations")
+        print(f"    See 'workers_below_minimum_analysis.csv' for details")
+    
     pd.DataFrame([{
         "Total Hours": total_hours_val, 
         "FTE": round(fte_val, 2),
@@ -906,6 +1076,7 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
         "Theoretical Min Headcount": min_headcount_theoretical,
         "Theoretical Max Headcount": max_headcount_theoretical,
         "People Below Min Hours": people_below_min,
+        "People Below Min Count": len(workers_below_min_details),
         "Min Weekly Hours": min_weekly_hours,
         "Max Weekly Hours": max_weekly_hours,
         "Min Days Off": min_days_off,
