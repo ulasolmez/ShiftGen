@@ -321,12 +321,17 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
         assigned = False
         shift_day_idx = shift['start'] // 288  # Which day (0-6) this shift starts on
         
-        # Sorting Strategy for better packing:
-        # 1. Prioritize those who are FURTHEST below min_weekly_hours (maximize hour coverage)
-        # 2. Among those, prioritize those available earliest (minimize idle time)
-        # 3. Among those, prefer those with more remaining capacity
+        # Calculate max working days based on off-day policy
+        max_working_days = 7 - math.ceil(min_days_off)
+        
+        # Sorting Strategy for efficient packing:
+        # 1. Prioritize workers who haven't maxed out their working days yet
+        # 2. Among those, prioritize workers furthest below min hours
+        # 3. Then those available earliest (by rest constraint)
+        # 4. Finally those with most remaining hour capacity
         personnel_pool.sort(key=lambda x: (
-            x['weekly_hours'] >= min_weekly_hours,  # Below min comes first (False < True)
+            len(x['days_worked']) >= max_working_days,  # Haven't maxed days comes first
+            x['weekly_hours'] >= min_weekly_hours,  # Below min hours comes first
             -1 * (min_weekly_hours - x['weekly_hours']) if x['weekly_hours'] < min_weekly_hours else 0,  # Furthest below min
             x['end_time'],  # Available earliest
             -1 * (max_weekly_hours - x['weekly_hours'])  # Most remaining capacity
@@ -348,17 +353,41 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
                         break
         
         if not assigned:
-            # Only create a new person if absolutely necessary
-            # This happens when rest constraints prevent using existing workers
-            new_id = len(personnel_pool) + 1
-            personnel_pool.append({
-                'id': new_id,
-                'end_time': shift["end"],
-                'weekly_hours': shift["duration"],
-                'days_worked': {shift_day_idx},
-                'shift_times': [(shift["start"], shift["end"])]
-            })
-            p_id = new_id
+            # Before creating a new worker, verify that NONE of the existing workers can take this shift
+            # due to constraints (not just sorting order)
+            can_assign_to_existing = False
+            for p in personnel_pool:
+                if shift["start"] >= p['end_time'] + REST_INTERVALS:
+                    if p['weekly_hours'] + shift['duration'] <= max_weekly_hours:
+                        if not violates_off_day_policy(p, shift_day_idx, shift["start"], shift["end"]):
+                            can_assign_to_existing = True
+                            break
+            
+            # Only create new worker if absolutely no existing worker is eligible
+            if not can_assign_to_existing:
+                new_id = len(personnel_pool) + 1
+                personnel_pool.append({
+                    'id': new_id,
+                    'end_time': shift["end"],
+                    'weekly_hours': shift["duration"],
+                    'days_worked': {shift_day_idx},
+                    'shift_times': [(shift["start"], shift["end"])]
+                })
+                p_id = new_id
+            else:
+                # Should have been assigned in the loop above, this is a logic error
+                # Re-try assignment with the first eligible worker found
+                for p in personnel_pool:
+                    if shift["start"] >= p['end_time'] + REST_INTERVALS:
+                        if p['weekly_hours'] + shift['duration'] <= max_weekly_hours:
+                            if not violates_off_day_policy(p, shift_day_idx, shift["start"], shift["end"]):
+                                p['end_time'] = shift["end"]
+                                p['weekly_hours'] += shift["duration"]
+                                p['days_worked'].add(shift_day_idx)
+                                p['shift_times'].append((shift["start"], shift["end"]))
+                                p_id = p['id']
+                                assigned = True
+                                break
             
         roster_rows.append({
             "Personnel_ID": f"EMP_{p_id:03d}",
