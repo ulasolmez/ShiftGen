@@ -288,11 +288,11 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
     # Helper function to check if assigning a shift violates the off-day policy
     def violates_off_day_policy(person, shift_day_idx, shift_start_idx, shift_end_idx):
         if min_days_off == 1.0:
-            # Must have at least 1 full day off (work max 6 days)
+            # Maximum 1 day off allowed (must work at least 6 days)
             if len(person['days_worked']) >= 6 and shift_day_idx not in person['days_worked']:
                 return True
         elif min_days_off == 1.5:
-            # Must have at least 36 consecutive hours (72 intervals) off somewhere in the week
+            # Maximum 1.5 days off: Must work enough to leave max 36 consecutive hours off
             # Check if adding this shift would prevent having 36 hours off
             test_shifts = person['shift_times'] + [(shift_start_idx, shift_end_idx)]
             test_shifts.sort()
@@ -312,7 +312,7 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
             if max_gap < 72:  # 36 hours = 72 intervals
                 return True
         elif min_days_off == 2.0:
-            # Must have at least 2 full days off (work max 5 days)
+            # Maximum 2 days off allowed (must work at least 5 days)
             if len(person['days_worked']) >= 5 and shift_day_idx not in person['days_worked']:
                 return True
         return False

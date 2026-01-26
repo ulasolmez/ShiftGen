@@ -34,11 +34,11 @@ peak_cutting = st.sidebar.checkbox("Ignore Short-Duration Peak Spikes", value=Fa
 
 st.sidebar.markdown("### 📅 Off-Day Policy")
 off_days_policy = st.sidebar.selectbox(
-    "Minimum Days Off per Week",
+    "Maximum Days Off per Week",
     options=[1.0, 1.5, 2.0],
     index=0,
-    format_func=lambda x: f"{x} day{'s' if x != 1 else ''} off",
-    help="Ensures each worker gets sufficient rest days. 1.5 days = 36 consecutive hours off."
+    format_func=lambda x: f"{x} day{'s' if x != 1 else ''} off (max)",
+    help="Sets the maximum rest days allowed. Workers will be scheduled to work as many days as possible within this limit. 1.5 days = 36 consecutive hours off."
 )
 
 st.sidebar.markdown("---")
