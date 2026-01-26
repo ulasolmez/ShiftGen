@@ -190,11 +190,57 @@ if os.path.exists("weekly_summary.csv"):
                 df_roster = pd.read_csv("personnel_roster_weekly.csv")
                 df_roster.to_excel(writer, sheet_name='People Roster', index=False)
                 
+                # 2b. Worker Summary Sheet (Total hours + off days per person)
+                if 'Personnel_ID' in df_roster.columns:
+                    days_of_week = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+                    worker_summary = []
+                    
+                    for worker_id in df_roster['Personnel_ID'].unique():
+                        worker_shifts = df_roster[df_roster['Personnel_ID'] == worker_id]
+                        
+                        # Calculate total hours (assuming we can derive from Start/End or have Duration column)
+                        total_hours = 0
+                        days_worked = set()
+                        
+                        for _, shift in worker_shifts.iterrows():
+                            if 'Start' in shift and 'End' in shift:
+                                start_time = pd.to_datetime(shift['Start'], format='%H:%M')
+                                end_time = pd.to_datetime(shift['End'], format='%H:%M')
+                                if end_time < start_time:
+                                    end_time += pd.Timedelta(days=1)
+                                duration = (end_time - start_time).total_seconds() / 3600
+                                total_hours += duration
+                            
+                            if 'Day' in shift:
+                                days_worked.add(shift['Day'])
+                        
+                        # Determine off days
+                        off_days = [day for day in days_of_week if day not in days_worked]
+                        
+                        worker_summary.append({
+                            'Personnel_ID': worker_id,
+                            'Total_Hours': round(total_hours, 2),
+                            'Days_Worked': len(days_worked),
+                            'Off_Days': ', '.join(off_days) if off_days else 'None'
+                        })
+                    
+                    pd.DataFrame(worker_summary).to_excel(writer, sheet_name='Worker Summary', index=False)
+                
                 # 3. Unique Shift Types Sheet
                 if 'Start' in df_roster.columns and 'End' in df_roster.columns:
                     # Count frequency of each shift type
                     unique_shifts = df_roster.groupby(['Start', 'End']).size().reset_index(name='Total Assigned')
                     unique_shifts = unique_shifts.sort_values('Start')
+                    
+                    # Add formatted shift type column
+                    def format_shift_type(row):
+                        start_hhmm = row['Start'].replace(':', '')
+                        end_hhmm = row['End'].replace(':', '')
+                        return f"{start_hhmm}-{end_hhmm}"
+                    
+                    unique_shifts['Shift_Type'] = unique_shifts.apply(format_shift_type, axis=1)
+                    # Reorder columns to put Shift_Type first
+                    unique_shifts = unique_shifts[['Shift_Type', 'Start', 'End', 'Total Assigned']]
                     unique_shifts.to_excel(writer, sheet_name='Shift Types', index=False)
             
             # 4. Shuttle Report
