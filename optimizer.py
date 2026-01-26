@@ -253,21 +253,35 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
     # 12-hour rest requirement in intervals (12h * 12 intervals/h = 144)
     REST_INTERVALS = 144
     
-    # Personnel is a list of dicts: {'end_time': int, 'weekly_hours': float, 'id': int}
-    personnel_pool = [] 
+    # Calculate theoretical headcount target
+    total_shift_hours = sum(s['duration'] for s in all_assigned_shifts)
+    theoretical_min_people = max(1, math.ceil(total_shift_hours / max_weekly_hours)) if max_weekly_hours > 0 else 1
+    theoretical_max_people = max(theoretical_min_people, math.floor(total_shift_hours / min_weekly_hours)) if min_weekly_hours > 0 else theoretical_min_people * 2
+    
+    # Pre-initialize personnel slots targeting the theoretical minimum
+    # This encourages the algorithm to pack shifts into fewer people
+    personnel_pool = []
+    for i in range(theoretical_min_people):
+        personnel_pool.append({
+            'id': i + 1,
+            'end_time': -REST_INTERVALS - 1,  # Available from the start
+            'weekly_hours': 0.0
+        })
+    
     roster_rows = []
 
     for shift in all_assigned_shifts:
         assigned = False
-        # Try to find a person who has rested enough AND has not exceeded weekly hours
-        # Sorting Strategy:
-        # 1. Prioritize those who are still below min_weekly_hours (False < True)
-        # 2. Among those, prioritize those with the FEWEST hours worked (leveling)
-        # 3. Finally, use end_time to pick those available earliest (minimizes headcount inflation)
+        
+        # Sorting Strategy for better packing:
+        # 1. Prioritize those who are FURTHEST below min_weekly_hours (maximize hour coverage)
+        # 2. Among those, prioritize those available earliest (minimize idle time)
+        # 3. Among those, prefer those with more remaining capacity
         personnel_pool.sort(key=lambda x: (
-            x['weekly_hours'] >= min_weekly_hours, 
-            x['weekly_hours'],
-            x['end_time']
+            x['weekly_hours'] >= min_weekly_hours,  # Below min comes first (False < True)
+            -1 * (min_weekly_hours - x['weekly_hours']) if x['weekly_hours'] < min_weekly_hours else 0,  # Furthest below min
+            x['end_time'],  # Available earliest
+            -1 * (max_weekly_hours - x['weekly_hours'])  # Most remaining capacity
         ))
         
         for p in personnel_pool:
@@ -282,7 +296,8 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
                     break
         
         if not assigned:
-            # Need a new person
+            # Only create a new person if absolutely necessary
+            # This happens when rest constraints prevent using existing workers
             new_id = len(personnel_pool) + 1
             personnel_pool.append({
                 'id': new_id,
