@@ -45,10 +45,10 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
     # We do this BEFORE buffering so we don't accidentally widen a noise spike
     if apply_peak_cutting:
         print("Applying peak cutting to ignore short-duration spikes...")
-        # Window size of 6 intervals = 30 minutes. 
-        # Any peak narrower than ~15-20 mins will be flattened.
-        window = 6 
-        # Pad for wrapping: add last 6 to start, first 6 to end to handle boundaries
+        # Window size of 2 intervals = 10 minutes. 
+        # Any peak narrower than ~5 mins will be flattened.
+        window = 2 
+        # Pad for wrapping: add last 2 to start, first 2 to end to handle boundaries
         padded = required[-window:] + required + required[:window]
         s_padded = pd.Series(padded)
         
