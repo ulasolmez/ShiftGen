@@ -127,13 +127,48 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
                     "global_end_idx": (global_start_idx + duration_intervals) % num_intervals
                 })
         else:
-            # Generate possible shift durations based on min/max constraints
-            # We step by 0.5 hours (30 mins)
+            # ============ COLUMN GENERATION: PHASE 1 - Strategic Shift Generation ============
+            # Instead of generating ALL possible shifts (which creates huge problems),
+            # we generate shifts in phases based on workload patterns
+            
+            # Identify high-demand periods for this day
+            day_workload = final_required[day_idx * 288 : (day_idx + 1) * 288]
+            avg_demand = np.mean([d for d in day_workload if d > 0]) if any(d > 0 for d in day_workload) else 0
+            
+            # Phase 1: Generate "core" shifts covering peak periods
+            # We focus on shifts that start/end near high-demand times
             possible_durations = [d * 0.5 for d in range(int(min_shift_length * 2), int(max_shift_length * 2) + 1)]
             
+            # Prioritize shift start times based on workload changes
+            prioritized_starts = []
             for start_time_str in shuttle_windows:
                 h, m = map(int, start_time_str.split(":"))
                 global_start_idx = day_idx * 288 + (h * 12 + m // 5)
+                local_idx = global_start_idx % 288
+                
+                # Calculate workload intensity around this start time
+                window_demand = 0
+                for offset in range(-6, 6):  # ±30 min window
+                    check_idx = (local_idx + offset) % 288
+                    window_demand += day_workload[check_idx]
+                
+                # Prioritize starts during or near high-demand periods
+                if window_demand > 0:
+                    prioritized_starts.append((start_time_str, window_demand, global_start_idx))
+            
+            # Sort by demand (highest first) and take top candidates + some random coverage
+            prioritized_starts.sort(key=lambda x: -x[1])
+            
+            # Strategy: Generate shifts for top 60% of demand points + every 4th low-demand point
+            num_high_priority = max(3, int(len(prioritized_starts) * 0.6))
+            selected_starts = prioritized_starts[:num_high_priority]
+            
+            # Add some low-demand starts for coverage (every 4th)
+            for i, start_info in enumerate(prioritized_starts[num_high_priority:]):
+                if i % 4 == 0:
+                    selected_starts.append(start_info)
+            
+            for start_time_str, _, global_start_idx in selected_starts:
                 for duration_hours in possible_durations:
                     end_time_str = get_end_time_str(start_time_str, duration_hours)
                     if end_time_str not in shuttle_windows:
@@ -141,15 +176,21 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
                     duration_intervals = int(duration_hours * 12)
                     
                     # Validate shift doesn't span excessive zero-workload periods
-                    # Check if more than 50% of shift duration is during zero-demand intervals
                     zero_count = 0
+                    workload_covered = 0
                     for i in range(duration_intervals):
                         check_idx = (global_start_idx + i) % num_intervals
                         if final_required[check_idx] == 0:
                             zero_count += 1
+                        else:
+                            workload_covered += final_required[check_idx]
                     
                     # Skip shifts that are mostly during zero-demand periods
                     if zero_count > (duration_intervals * 0.5):
+                        continue
+                    
+                    # Skip shifts that cover almost no workload (efficiency filter)
+                    if workload_covered < (duration_hours * avg_demand * 0.1) and avg_demand > 0:
                         continue
                     
                     coverage = np.zeros(num_intervals, dtype=int)
@@ -162,9 +203,12 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
                         "start_time": start_time_str, "end_time": end_time_str,
                         "duration": duration_hours, "coverage": coverage, "display": shift_display,
                         "global_start_idx": global_start_idx,
-                        "global_end_idx": (global_start_idx + duration_intervals) % num_intervals
+                        "global_end_idx": (global_start_idx + duration_intervals) % num_intervals,
+                        "workload_score": workload_covered  # Track shift value
                     })
 
+    print(f"Phase 1: Generated {len(shifts)} strategic shifts (filtered from full set)")
+    
     # 3. Create the Optimization Problem
     prob = pulp.LpProblem("Weekly_Shuttle_Shift_Optimization", pulp.LpMinimize)
     shift_vars = pulp.LpVariable.dicts("Shifts", [s["id"] for s in shifts], lowBound=0, cat='Integer')
@@ -196,12 +240,15 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
     prob += pulp.lpSum([shift_vars[s["id"]] for s in shifts]) + 0.1 * pulp.lpSum([shuttle_in_vars[t] + shuttle_out_vars[t] for t in shuttle_windows_indices])
     
     print("Adding workload and shuttle constraints...")
+    under_covered_intervals = []  # Track intervals that need additional shift options
+    
     for t in range(num_intervals):
         # Workload constraint
         if covers[t]:
             prob += pulp.lpSum([shift_vars[sid] for sid in covers[t]]) >= final_required[t]
         elif final_required[t] > 0:
-            print(f"Warning: No possible shifts cover interval {t} ({times_list[t]})")
+            print(f"Warning: Interval {t} ({times_list[t]}) needs coverage but has no shifts - marking for Phase 2")
+            under_covered_intervals.append(t)
         
         # Shuttle logic only if it's a shuttle window
         if t in shuttle_windows_indices:
@@ -213,14 +260,96 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
     total_hours = pulp.lpSum([shift_vars[s["id"]] * s["duration"] for s in shifts])
     if max_fte is not None:
         prob += (total_hours / 45.0) <= max_fte
+    
+    # ============ PHASE 2: Generate Additional Shifts if Needed ============
+    if under_covered_intervals:
+        print(f"Phase 2: Generating targeted shifts for {len(under_covered_intervals)} under-covered intervals...")
+        phase2_shifts = []
+        
+        for problem_idx in under_covered_intervals:
+            day_idx = problem_idx // 288
+            local_idx = problem_idx % 288
+            
+            # Find shuttle windows near this interval
+            for offset in range(-12, 13, 3):  # Search ±1 hour in 15-min steps
+                potential_start_idx = problem_idx + offset
+                if potential_start_idx < 0 or potential_start_idx >= num_intervals:
+                    continue
+                
+                start_local = potential_start_idx % 288
+                start_hour = start_local // 12
+                start_min = (start_local % 12) * 5
+                start_time_str = f"{start_hour:02d}:{start_min:02d}"
+                
+                if start_time_str not in shuttle_windows:
+                    continue
+                
+                # Try various durations that would cover the problem interval
+                for duration_hours in [4.0, 6.0, 8.0, 10.0]:
+                    end_time_str = get_end_time_str(start_time_str, duration_hours)
+                    if end_time_str not in shuttle_windows:
+                        continue
+                    
+                    duration_intervals = int(duration_hours * 12)
+                    coverage = np.zeros(num_intervals, dtype=int)
+                    for i in range(duration_intervals):
+                        coverage[(potential_start_idx + i) % num_intervals] = 1
+                    
+                    # Check if this shift actually covers the problem interval
+                    if coverage[problem_idx] == 0:
+                        continue
+                    
+                    shift_id = f"Phase2_Day{day_idx}_{format_as_hhmm(start_time_str)}_{duration_hours}h"
+                    if shift_id not in shift_vars:  # Don't duplicate
+                        phase2_shifts.append({
+                            "id": shift_id, "day_idx": day_idx, "day_name": days[day_idx],
+                            "start_time": start_time_str, "end_time": end_time_str,
+                            "duration": duration_hours, "coverage": coverage,
+                            "display": f"{format_as_hhmm(start_time_str)}-{format_as_hhmm(end_time_str)}",
+                            "global_start_idx": potential_start_idx,
+                            "global_end_idx": (potential_start_idx + duration_intervals) % num_intervals
+                        })
+        
+        if phase2_shifts:
+            print(f"Adding {len(phase2_shifts)} Phase 2 shifts to cover gaps...")
+            # Add new shifts to the problem
+            for s in phase2_shifts:
+                shifts.append(s)
+                shift_vars[s["id"]] = pulp.LpVariable(s["id"], lowBound=0, cat='Integer')
+                starts_at[s["global_start_idx"]].append(s["id"])
+                ends_at[s["global_end_idx"]].append(s["id"])
+                indices = np.where(s["coverage"] == 1)[0]
+                for idx in indices:
+                    if idx not in covers:
+                        covers[idx] = []
+                    covers[idx].append(s["id"])
+            
+            # Rebuild objective and constraints with new shifts
+            prob.objective = pulp.lpSum([shift_vars[s["id"]] for s in shifts]) + 0.1 * pulp.lpSum([shuttle_in_vars[t] + shuttle_out_vars[t] for t in shuttle_windows_indices])
+            
+            # Update coverage constraints
+            for t in under_covered_intervals:
+                if covers[t]:
+                    prob += pulp.lpSum([shift_vars[sid] for sid in covers[t]]) >= final_required[t]
+            
+            # Update shuttle constraints for new shifts
+            for s in phase2_shifts:
+                if s["global_start_idx"] in shuttle_windows_indices:
+                    prob += shuttle_in_vars[s["global_start_idx"]] >= shift_vars[s["id"]] / shuttle_capacity
+                if s["global_end_idx"] in shuttle_windows_indices:
+                    prob += shuttle_out_vars[s["global_end_idx"]] >= shift_vars[s["id"]] / shuttle_capacity
+            
+            # Update total hours constraint
+            prob.constraints["_C1"] = (pulp.lpSum([shift_vars[s["id"]] * s["duration"] for s in shifts]) / 45.0 <= max_fte) if max_fte else None
         
     # 4. Solve (with a 30s time limit to ensure responsiveness)
-    print(f"Solving optimization (Shuttle-aligned, Max FTE: {max_fte if max_fte else 'Unlimited'})...")
+    print(f"Solving optimization with {len(shifts)} total shifts (Phase 1 + Phase 2)...")
+    print(f"Parameters: Max FTE: {max_fte if max_fte else 'Unlimited'}, Min Hours: {min_weekly_hours}, Max Hours: {max_weekly_hours}")
     # Added timeLimit and gap tolerance to speed up the solver
     prob.solve(pulp.PULP_CBC_CMD(msg=0, timeLimit=30, gapRel=0.01))
     
     if pulp.LpStatus[prob.status] != 'Optimal':
-        print("Warning: No optimal solution found.")
+        print(f"Warning: Solution status = {pulp.LpStatus[prob.status]}")
         return None
 
     # 5. Extract Results and Assign to Personnel with 12h Rest
