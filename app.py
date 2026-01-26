@@ -137,10 +137,10 @@ if os.path.exists("weekly_summary.csv"):
     
     # Headcount Logic
     actual_headcount = int(summary.iloc[0]['Headcount'])
-    target_min = int(summary.iloc[0]['Theoretical Min Headcount'])
-    target_max = int(summary.iloc[0]['Theoretical Max Headcount'])
+    target_min = int(summary.iloc[0]['Theoretical Min Headcount']) if 'Theoretical Min Headcount' in summary.columns else 0
+    target_max = int(summary.iloc[0]['Theoretical Max Headcount']) if 'Theoretical Max Headcount' in summary.columns else 0
     
-    m2.metric("Headcount", actual_headcount, help=f"Theoretical Target: {target_min} to {target_max} people.")
+    m2.metric("Headcount", actual_headcount, help=f"Theoretical Target: {target_min} to {target_max} people." if target_max > 0 else None)
     m3.metric("Total Hours", f"{summary.iloc[0]['Total Hours']:.1f}")
     m4.metric("Weekly Shuttles", f"{int(summary.iloc[0]['Total Weekly Shuttles'])}")
     
@@ -149,12 +149,15 @@ if os.path.exists("weekly_summary.csv"):
         m5.metric("Below Min Hours", below_min, delta=-below_min if below_min > 0 else 0, delta_color="inverse")
     
     # Validation Warnings
-    st.markdown(f"**Target Headcount Analysis:** Given {summary.iloc[0]['Total Hours']:.1f} total hours and {min_hours_per_person}-{max_hours_per_person}h range, you should ideally have **{target_min} - {target_max}** workers. Current headcount is **{actual_headcount}**.")
-    
-    if actual_headcount > target_max and target_max > 0:
-        st.warning(f"⚠️ Headcount ({actual_headcount}) is higher than the theoretical maximum ({target_max}) for a {min_hours_per_person}h minimum. This means you have too many people working too few hours, likely due to shift overlap constraints.")
-    elif actual_headcount < target_min:
-        st.error(f"⚠️ Headcount ({actual_headcount}) is lower than the theoretical minimum ({target_min}). This shouldn't be possible without violating Max Hours.")
+    if target_max > 0:
+        st.markdown(f"**Target Headcount Analysis:** Given {summary.iloc[0]['Total Hours']:.1f} total hours and {min_hours_per_person}-{max_hours_per_person}h range, you should ideally have **{target_min} - {target_max}** workers. Current headcount is **{actual_headcount}**.")
+        
+        if actual_headcount > target_max:
+            st.warning(f"⚠️ Headcount ({actual_headcount}) is higher than the theoretical maximum ({target_max}) for a {min_hours_per_person}h minimum. This means you have too many people working too few hours, likely due to shift overlap constraints.")
+        elif actual_headcount < target_min:
+            st.error(f"⚠️ Headcount ({actual_headcount}) is lower than the theoretical minimum ({target_min}). This shouldn't be possible without violating Max Hours.")
+    else:
+        st.info("💡 Run the optimizer to see the headcount analysis for your new min/max hour settings.")
 
     if summary.iloc[0]['Total Weekly Shuttles'] > max_shuttles:
         st.warning(f"⚠️ Actual shuttles ({int(summary.iloc[0]['Total Weekly Shuttles'])}) exceed the maximum limit of {max_shuttles} set in sidebar.")
