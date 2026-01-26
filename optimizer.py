@@ -13,7 +13,7 @@ def get_end_time_str(start_time_str, duration_hours):
     end_dt = start_dt + timedelta(hours=duration_hours)
     return end_dt.strftime("%H:%M")
 
-def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None, shuttle_interval=60, sparse_mode=False, shuttle_capacity=16, templates_path="shift_templates.csv", custom_shuttle_windows=None, max_shuttles=None, max_headcount=None, min_weekly_hours=35.0, max_weekly_hours=48.0, min_shift_length=4.0, max_shift_length=11.0, auto_shuttle=False, add_handover_buffer=False, apply_peak_cutting=False):
+def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None, shuttle_interval=60, sparse_mode=False, shuttle_capacity=16, templates_path="shift_templates.csv", custom_shuttle_windows=None, max_shuttles=None, max_headcount=None, min_weekly_hours=35.0, max_weekly_hours=48.0, min_shift_length=4.0, max_shift_length=11.0, min_days_off=1.0, auto_shuttle=False, add_handover_buffer=False, apply_peak_cutting=False):
     # 1. Load data
     if not os.path.exists(csv_path):
         print(f"Error: {csv_path} not found. Run generate_data.py first.")
@@ -265,13 +265,48 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
         personnel_pool.append({
             'id': i + 1,
             'end_time': -REST_INTERVALS - 1,  # Available from the start
-            'weekly_hours': 0.0
+            'weekly_hours': 0.0,
+            'days_worked': set(),  # Track which days (0-6) this person has worked
+            'shift_times': []  # Track (start_idx, end_idx) for consecutive rest calculation
         })
     
     roster_rows = []
+    
+    # Helper function to check if assigning a shift violates the off-day policy
+    def violates_off_day_policy(person, shift_day_idx, shift_start_idx, shift_end_idx):
+        if min_days_off == 1.0:
+            # Must have at least 1 full day off (work max 6 days)
+            if len(person['days_worked']) >= 6 and shift_day_idx not in person['days_worked']:
+                return True
+        elif min_days_off == 1.5:
+            # Must have at least 36 consecutive hours (72 intervals) off somewhere in the week
+            # Check if adding this shift would prevent having 36 hours off
+            test_shifts = person['shift_times'] + [(shift_start_idx, shift_end_idx)]
+            test_shifts.sort()
+            
+            # Find longest gap between shifts
+            max_gap = 0
+            if test_shifts:
+                # Gap before first shift (from start of week)
+                max_gap = max(max_gap, test_shifts[0][0])
+                # Gaps between shifts
+                for i in range(len(test_shifts) - 1):
+                    gap = test_shifts[i+1][0] - test_shifts[i][1]
+                    max_gap = max(max_gap, gap)
+                # Gap after last shift (to end of week)
+                max_gap = max(max_gap, 2016 - test_shifts[-1][1])
+            
+            if max_gap < 72:  # 36 hours = 72 intervals
+                return True
+        elif min_days_off == 2.0:
+            # Must have at least 2 full days off (work max 5 days)
+            if len(person['days_worked']) >= 5 and shift_day_idx not in person['days_worked']:
+                return True
+        return False
 
     for shift in all_assigned_shifts:
         assigned = False
+        shift_day_idx = shift['start'] // 288  # Which day (0-6) this shift starts on
         
         # Sorting Strategy for better packing:
         # 1. Prioritize those who are FURTHEST below min_weekly_hours (maximize hour coverage)
@@ -289,11 +324,15 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
             if shift["start"] >= p['end_time'] + REST_INTERVALS:
                 # Check 2: Max Hours Constraint
                 if p['weekly_hours'] + shift['duration'] <= max_weekly_hours:
-                    p['end_time'] = shift["end"]
-                    p['weekly_hours'] += shift["duration"]
-                    p_id = p['id']
-                    assigned = True
-                    break
+                    # Check 3: Off-Day Policy Constraint
+                    if not violates_off_day_policy(p, shift_day_idx, shift["start"], shift["end"]):
+                        p['end_time'] = shift["end"]
+                        p['weekly_hours'] += shift["duration"]
+                        p['days_worked'].add(shift_day_idx)
+                        p['shift_times'].append((shift["start"], shift["end"]))
+                        p_id = p['id']
+                        assigned = True
+                        break
         
         if not assigned:
             # Only create a new person if absolutely necessary
@@ -302,7 +341,9 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
             personnel_pool.append({
                 'id': new_id,
                 'end_time': shift["end"],
-                'weekly_hours': shift["duration"]
+                'weekly_hours': shift["duration"],
+                'days_worked': {shift_day_idx},
+                'shift_times': [(shift["start"], shift["end"])]
             })
             p_id = new_id
             
@@ -360,6 +401,7 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
         "People Below Min Hours": people_below_min,
         "Min Weekly Hours": min_weekly_hours,
         "Max Weekly Hours": max_weekly_hours,
+        "Min Days Off": min_days_off,
         "Total Weekly Shuttles": sum(x['Total_Shuttles'] for x in shuttle_data), 
         "Max FTE Allowed": max_fte,
         "Max Headcount Allowed": max_headcount if max_headcount else "Unlimited"

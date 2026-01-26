@@ -32,6 +32,15 @@ max_shift_len = c_max.number_input("Max Shift (Hrs)", 4.0, 12.0, 11.0, 0.5)
 add_buffer = st.sidebar.checkbox("Apply 30-min Prep/Handover Buffer", value=False, help="Forces shifts to start 30 mins early or stay 30 mins late around workload peaks to allow for preparation and shift handovers.")
 peak_cutting = st.sidebar.checkbox("Ignore Short-Duration Peak Spikes", value=False, help="Smoothes out very short workload spikes (less than 30 mins) to avoid hiring extra staff for momentary fluctuations.")
 
+st.sidebar.markdown("### 📅 Off-Day Policy")
+off_days_policy = st.sidebar.selectbox(
+    "Minimum Days Off per Week",
+    options=[1.0, 1.5, 2.0],
+    index=0,
+    format_func=lambda x: f"{x} day{'s' if x != 1 else ''} off",
+    help="Ensures each worker gets sufficient rest days. 1.5 days = 36 consecutive hours off."
+)
+
 st.sidebar.markdown("---")
 st.sidebar.subheader("🚐 Shuttle Timeline Selection")
 
@@ -111,6 +120,7 @@ with col2:
                 max_weekly_hours=max_hours_per_person,
                 min_shift_length=min_shift_len,
                 max_shift_length=max_shift_len,
+                min_days_off=off_days_policy,
                 auto_shuttle=auto_shuttle,
                 custom_shuttle_windows=shuttle_windows,
                 shuttle_capacity=shuttle_capacity,
