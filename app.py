@@ -18,7 +18,9 @@ This tool calculates the minimum personnel required to cover a weekly workload c
 st.sidebar.header("Parameters & Constraints")
 max_fte = st.sidebar.number_input("Maximum allowed FTE", min_value=0.0, value=80.0, help="FTE = Total Hours / 45")
 max_headcount = st.sidebar.number_input("Maximum Headcount", min_value=0, value=0, help="Optional: Hard limit on unique personnel. Set to 0 for unlimited.")
-max_hours_per_person = st.sidebar.number_input("Max Weekly Hours per Person", min_value=1.0, value=48.0, step=0.5, help="Constraint: An employee cannot be assigned more than these hours.")
+c1, c2 = st.sidebar.columns(2)
+min_hours_per_person = c1.number_input("Min Weekly Hours", min_value=0.0, value=35.0, step=0.5, help="Constraint: An employee should be assigned at least these hours if possible.")
+max_hours_per_person = c2.number_input("Max Weekly Hours", min_value=1.0, value=48.0, step=0.5, help="Constraint: An employee cannot be assigned more than these hours.")
 max_shuttles = st.sidebar.number_input("Maximum Weekly Shuttles", min_value=0, value=200, help="Warning only: Total sum of shuttle trips allowed.")
 shuttle_capacity = st.sidebar.number_input("Shuttle Capacity (Pax)", min_value=1, value=16)
 
@@ -105,6 +107,7 @@ with col2:
             result = solve_weekly_shift_optimization(
                 max_fte=max_fte,
                 max_headcount=max_headcount if max_headcount > 0 else None,
+                min_weekly_hours=min_hours_per_person,
                 max_weekly_hours=max_hours_per_person,
                 min_shift_length=min_shift_len,
                 max_shift_length=max_shift_len,
@@ -129,18 +132,38 @@ if os.path.exists("weekly_summary.csv"):
     st.markdown("---")
     st.subheader("📊 Weekly Summary Metrics")
     summary = pd.read_csv("weekly_summary.csv")
-    m1, m2, m3, m4 = st.columns(4)
+    m1, m2, m3, m4, m5 = st.columns(5)
     m1.metric("Total FTE", f"{summary.iloc[0]['FTE']:.2f}")
-    m2.metric("Total Headcount", f"{int(summary.iloc[0]['Headcount'])}")
+    
+    # Headcount Logic
+    actual_headcount = int(summary.iloc[0]['Headcount'])
+    target_min = int(summary.iloc[0]['Theoretical Min Headcount'])
+    target_max = int(summary.iloc[0]['Theoretical Max Headcount'])
+    
+    m2.metric("Headcount", actual_headcount, help=f"Theoretical Target: {target_min} to {target_max} people.")
     m3.metric("Total Hours", f"{summary.iloc[0]['Total Hours']:.1f}")
-    m4.metric("Total Weekly Shuttles", f"{int(summary.iloc[0]['Total Weekly Shuttles'])}")
+    m4.metric("Weekly Shuttles", f"{int(summary.iloc[0]['Total Weekly Shuttles'])}")
+    
+    if "People Below Min Hours" in summary.columns:
+        below_min = int(summary.iloc[0]['People Below Min Hours'])
+        m5.metric("Below Min Hours", below_min, delta=-below_min if below_min > 0 else 0, delta_color="inverse")
+    
+    # Validation Warnings
+    st.markdown(f"**Target Headcount Analysis:** Given {summary.iloc[0]['Total Hours']:.1f} total hours and {min_hours_per_person}-{max_hours_per_person}h range, you should ideally have **{target_min} - {target_max}** workers. Current headcount is **{actual_headcount}**.")
+    
+    if actual_headcount > target_max and target_max > 0:
+        st.warning(f"⚠️ Headcount ({actual_headcount}) is higher than the theoretical maximum ({target_max}) for a {min_hours_per_person}h minimum. This means you have too many people working too few hours, likely due to shift overlap constraints.")
+    elif actual_headcount < target_min:
+        st.error(f"⚠️ Headcount ({actual_headcount}) is lower than the theoretical minimum ({target_min}). This shouldn't be possible without violating Max Hours.")
 
-    # Validation Warning
     if summary.iloc[0]['Total Weekly Shuttles'] > max_shuttles:
         st.warning(f"⚠️ Actual shuttles ({int(summary.iloc[0]['Total Weekly Shuttles'])}) exceed the maximum limit of {max_shuttles} set in sidebar.")
         
     if max_headcount > 0 and int(summary.iloc[0]['Headcount']) > max_headcount:
         st.error(f"⚠️ Actual headcount ({int(summary.iloc[0]['Headcount'])}) exceeds the limit of {max_headcount}.")
+    
+    if "People Below Min Hours" in summary.columns and int(summary.iloc[0]['People Below Min Hours']) > 0:
+        st.info(f"💡 {int(summary.iloc[0]['People Below Min Hours'])} workers are assigned fewer than {min_hours_per_person} hours. This usually happens when shift timings prevent people from being combined further while respecting the 12-hour rest rule.")
 
     # --- Excel Report Generation ---
     def generate_excel():

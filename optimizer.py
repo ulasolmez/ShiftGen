@@ -13,7 +13,7 @@ def get_end_time_str(start_time_str, duration_hours):
     end_dt = start_dt + timedelta(hours=duration_hours)
     return end_dt.strftime("%H:%M")
 
-def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None, shuttle_interval=60, sparse_mode=False, shuttle_capacity=16, templates_path="shift_templates.csv", custom_shuttle_windows=None, max_shuttles=None, max_headcount=None, max_weekly_hours=48.0, min_shift_length=4.0, max_shift_length=11.0, auto_shuttle=False, add_handover_buffer=False, apply_peak_cutting=False):
+def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None, shuttle_interval=60, sparse_mode=False, shuttle_capacity=16, templates_path="shift_templates.csv", custom_shuttle_windows=None, max_shuttles=None, max_headcount=None, min_weekly_hours=35.0, max_weekly_hours=48.0, min_shift_length=4.0, max_shift_length=11.0, auto_shuttle=False, add_handover_buffer=False, apply_peak_cutting=False):
     # 1. Load data
     if not os.path.exists(csv_path):
         print(f"Error: {csv_path} not found. Run generate_data.py first.")
@@ -293,6 +293,7 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
 
     # Summary Stats
     total_unique_personnel = len(personnel_pool)
+    people_below_min = sum(1 for p in personnel_pool if p['weekly_hours'] < min_weekly_hours)
     
     # 6. Save Outputs
     pd.DataFrame(roster_rows).to_csv("personnel_roster_weekly.csv", index=False)
@@ -329,11 +330,19 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
     pd.DataFrame(shuttle_data).to_csv("shuttle_report_weekly.csv", index=False)
     
     fte_val = total_hours_val / 45.0
+    # Theoretical range based on min/max hours
+    min_headcount_theoretical = math.ceil(total_hours_val / max_weekly_hours) if max_weekly_hours > 0 else 0
+    max_headcount_theoretical = math.floor(total_hours_val / min_weekly_hours) if min_weekly_hours > 0 else total_unique_personnel
+    
     pd.DataFrame([{
         "Total Hours": total_hours_val, 
         "FTE": round(fte_val, 2),
         "Headcount": total_unique_personnel,
-        "Unique Personnel Needed": total_unique_personnel,
+        "Theoretical Min Headcount": min_headcount_theoretical,
+        "Theoretical Max Headcount": max_headcount_theoretical,
+        "People Below Min Hours": people_below_min,
+        "Min Weekly Hours": min_weekly_hours,
+        "Max Weekly Hours": max_weekly_hours,
         "Total Weekly Shuttles": sum(x['Total_Shuttles'] for x in shuttle_data), 
         "Max FTE Allowed": max_fte,
         "Max Headcount Allowed": max_headcount if max_headcount else "Unlimited"
