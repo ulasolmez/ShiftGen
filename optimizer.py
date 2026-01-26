@@ -575,8 +575,9 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
         for p in personnel_pool:
             # Check 1: Rest Constraint (12h since their last shift ended, with week wrapping)
             if check_rest_constraint_with_week_wrap(p['end_time'], shift["start"], REST_INTERVALS):
-                # Check 2: Max Hours Constraint
-                if p['weekly_hours'] + shift['duration'] <= max_weekly_hours:
+                # Check 2: Max Hours Constraint - STRICT ENFORCEMENT
+                potential_hours = p['weekly_hours'] + shift['duration']
+                if potential_hours <= max_weekly_hours:
                     # Check 3: Off-Day Policy Constraint
                     if not violates_off_day_policy(p, shift_day_idx, shift["start"], shift["end"]):
                         # This worker is eligible!
@@ -604,18 +605,29 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
             # Assign to the best worker
             best_worker = eligible_workers[0]['worker']
             
-            # CRITICAL VALIDATION: Double-check hours before assignment
-            if best_worker['weekly_hours'] + shift["duration"] > max_weekly_hours:
-                print(f"ERROR: Worker {best_worker['id']} would exceed max hours: {best_worker['weekly_hours']} + {shift['duration']} > {max_weekly_hours}")
-                # Force creation of new worker instead
+            # CRITICAL VALIDATION: Absolutely verify hours constraint
+            final_hours = best_worker['weekly_hours'] + shift["duration"]
+            
+            if final_hours > max_weekly_hours + 0.01:  # Allow tiny floating point error
+                print(f"\n!!! CRITICAL ERROR at shift {shift_idx} !!!")
+                print(f"  Attempted to assign to Worker {best_worker['id']}")
+                print(f"  Current hours: {best_worker['weekly_hours']:.2f}h")
+                print(f"  Shift duration: {shift['duration']:.2f}h")
+                print(f"  Would result in: {final_hours:.2f}h (MAX: {max_weekly_hours}h)")
+                print(f"  This should NEVER happen - constraint violated!")
+                print(f"  Forcing new worker creation...\n")
                 assigned = False
             else:
                 best_worker['end_time'] = shift["end"]
-                best_worker['weekly_hours'] += shift["duration"]
+                best_worker['weekly_hours'] = final_hours  # Use calculated value
                 best_worker['days_worked'].add(shift_day_idx)
                 best_worker['shift_times'].append((shift["start"], shift["end"]))
                 p_id = best_worker['id']
                 assigned = True
+                
+                # Sanity check after assignment
+                if best_worker['weekly_hours'] > max_weekly_hours + 0.01:
+                    print(f"\n!!! POST-ASSIGNMENT ERROR: Worker {best_worker['id']} now has {best_worker['weekly_hours']:.2f}h !!!\n")
         
         if not assigned:
             # Before creating a new worker, verify that NONE of the existing workers can take this shift
