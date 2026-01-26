@@ -414,6 +414,52 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
     
     roster_rows = []
     
+    # ============ WEEK-WRAPPING REST CONSTRAINT ============
+    def check_rest_constraint_with_week_wrap(person_end_time, shift_start, rest_intervals=144):
+        """
+        Checks if a worker has sufficient rest before taking a shift.
+        Handles week boundaries: Sunday night -> Monday morning transitions.
+        
+        Args:
+            person_end_time: When the person's last shift ended (in intervals from week start)
+            shift_start: When the new shift starts (in intervals from week start)
+            rest_intervals: Required rest period (default 144 = 12 hours)
+        
+        Returns:
+            True if worker has enough rest, False otherwise
+        """
+        # Week has 2016 intervals (7 days * 288 intervals/day)
+        WEEK_INTERVALS = 2016
+        
+        # Case 1: Normal case - shift starts after person's end time
+        if shift_start >= person_end_time + rest_intervals:
+            return True
+        
+        # Case 2: Week wrapping - person worked late Sunday, shift is early Monday
+        # If person worked Sunday (last day), check if Monday shift respects rest
+        person_day = person_end_time // 288
+        shift_day = shift_start // 288
+        
+        # If person's last shift was Sunday (day 6) and new shift is Monday (day 0)
+        if person_day == 6 and shift_day == 0:
+            # Calculate rest as if the week wraps
+            # Time from person's end to end of week + time from start of week to shift start
+            rest_time = (WEEK_INTERVALS - person_end_time) + shift_start
+            if rest_time >= rest_intervals:
+                return True
+        
+        # Case 3: Check if we're spanning across multiple weeks (for multi-week scheduling)
+        # This ensures Monday shifts respect Sunday night endings
+        if shift_day < person_day:  # Shift is earlier in week than last shift
+            # This might be next week's Monday after this week's Sunday
+            time_until_week_end = WEEK_INTERVALS - person_end_time
+            time_from_week_start = shift_start
+            total_rest = time_until_week_end + time_from_week_start
+            if total_rest >= rest_intervals:
+                return True
+        
+        return False
+    
     # ============ BIN PACKING WITH LOOK-AHEAD ============
     # Helper function: Score an assignment based on future shift compatibility
     def calculate_lookahead_score(person, current_shift, upcoming_shifts, lookahead_depth=3):
@@ -442,8 +488,8 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
             # Can this person take the future shift after taking current shift?
             can_take = True
             
-            # Check rest constraint
-            if future_shift["start"] < simulated_end_time + REST_INTERVALS:
+            # Check rest constraint (with week wrapping)
+            if not check_rest_constraint_with_week_wrap(simulated_end_time, future_shift["start"], REST_INTERVALS):
                 can_take = False
             
             # Check hours constraint
@@ -527,8 +573,8 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
         eligible_workers = []
         
         for p in personnel_pool:
-            # Check 1: Rest Constraint (12h since their last shift ended)
-            if shift["start"] >= p['end_time'] + REST_INTERVALS:
+            # Check 1: Rest Constraint (12h since their last shift ended, with week wrapping)
+            if check_rest_constraint_with_week_wrap(p['end_time'], shift["start"], REST_INTERVALS):
                 # Check 2: Max Hours Constraint
                 if p['weekly_hours'] + shift['duration'] <= max_weekly_hours:
                     # Check 3: Off-Day Policy Constraint
@@ -569,7 +615,7 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
             # due to constraints (not just sorting order)
             can_assign_to_existing = False
             for p in personnel_pool:
-                if shift["start"] >= p['end_time'] + REST_INTERVALS:
+                if check_rest_constraint_with_week_wrap(p['end_time'], shift["start"], REST_INTERVALS):
                     if p['weekly_hours'] + shift['duration'] <= max_weekly_hours:
                         if not violates_off_day_policy(p, shift_day_idx, shift["start"], shift["end"]):
                             can_assign_to_existing = True
@@ -590,7 +636,7 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
                 # Should have been assigned in the loop above, this is a logic error
                 # Re-try assignment with the first eligible worker found
                 for p in personnel_pool:
-                    if shift["start"] >= p['end_time'] + REST_INTERVALS:
+                    if check_rest_constraint_with_week_wrap(p['end_time'], shift["start"], REST_INTERVALS):
                         if p['weekly_hours'] + shift['duration'] <= max_weekly_hours:
                             if not violates_off_day_policy(p, shift_day_idx, shift["start"], shift["end"]):
                                 p['end_time'] = shift["end"]
