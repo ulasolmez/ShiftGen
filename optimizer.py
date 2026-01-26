@@ -603,12 +603,19 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
             
             # Assign to the best worker
             best_worker = eligible_workers[0]['worker']
-            best_worker['end_time'] = shift["end"]
-            best_worker['weekly_hours'] += shift["duration"]
-            best_worker['days_worked'].add(shift_day_idx)
-            best_worker['shift_times'].append((shift["start"], shift["end"]))
-            p_id = best_worker['id']
-            assigned = True
+            
+            # CRITICAL VALIDATION: Double-check hours before assignment
+            if best_worker['weekly_hours'] + shift["duration"] > max_weekly_hours:
+                print(f"ERROR: Worker {best_worker['id']} would exceed max hours: {best_worker['weekly_hours']} + {shift['duration']} > {max_weekly_hours}")
+                # Force creation of new worker instead
+                assigned = False
+            else:
+                best_worker['end_time'] = shift["end"]
+                best_worker['weekly_hours'] += shift["duration"]
+                best_worker['days_worked'].add(shift_day_idx)
+                best_worker['shift_times'].append((shift["start"], shift["end"]))
+                p_id = best_worker['id']
+                assigned = True
         
         if not assigned:
             # Before creating a new worker, verify that NONE of the existing workers can take this shift
@@ -656,6 +663,39 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
             "duration_intervals": int(shift["duration"] * 12),
             "start_idx": shift["start"]
         })
+
+    # ============ CRITICAL VALIDATION ============
+    print("\nValidating worker hour assignments...")
+    violations = 0
+    for p in personnel_pool:
+        if p['weekly_hours'] > max_weekly_hours:
+            print(f"  ERROR: Worker {p['id']} has {p['weekly_hours']:.1f}h (max: {max_weekly_hours}h) - CONSTRAINT VIOLATION!")
+            violations += 1
+        elif p['weekly_hours'] > max_weekly_hours * 0.95:
+            print(f"  Warning: Worker {p['id']} near limit: {p['weekly_hours']:.1f}h")
+    
+    if violations > 0:
+        print(f"\n⚠️ CRITICAL: {violations} workers exceed maximum hours! Rebuilding worker hours from roster...")
+        
+        # Rebuild personnel_pool hours from actual roster
+        worker_actual_hours = {}
+        for row in roster_rows:
+            worker_id = row['Personnel_ID']
+            duration = row['duration_intervals'] / 12.0
+            if worker_id not in worker_actual_hours:
+                worker_actual_hours[worker_id] = 0.0
+            worker_actual_hours[worker_id] += duration
+        
+        # Update personnel_pool with actual hours
+        for p in personnel_pool:
+            worker_id = f"EMP_{p['id']:03d}"
+            if worker_id in worker_actual_hours:
+                actual_hours = worker_actual_hours[worker_id]
+                if abs(actual_hours - p['weekly_hours']) > 0.1:
+                    print(f"  Correcting Worker {p['id']}: tracked={p['weekly_hours']:.1f}h, actual={actual_hours:.1f}h")
+                    p['weekly_hours'] = actual_hours
+    else:
+        print("  ✓ All workers within hour limits")
 
     # ============ LOCAL SEARCH POST-PROCESSING ============
     print(f"Initial solution: {len(personnel_pool)} workers assigned")
