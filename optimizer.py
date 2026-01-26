@@ -414,6 +414,72 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
     
     roster_rows = []
     
+    # ============ BIN PACKING WITH LOOK-AHEAD ============
+    # Helper function: Score an assignment based on future shift compatibility
+    def calculate_lookahead_score(person, current_shift, upcoming_shifts, lookahead_depth=3):
+        """
+        Scores how good it is to assign current_shift to this person
+        by checking if they can also take valuable upcoming shifts.
+        Higher score = better assignment (more future flexibility)
+        """
+        score = 0
+        
+        # Simulate assigning the current shift
+        simulated_end_time = current_shift["end"]
+        simulated_hours = person['weekly_hours'] + current_shift['duration']
+        simulated_days = person['days_worked'].copy()
+        simulated_days.add(current_shift['start'] // 288)
+        simulated_shifts = person['shift_times'].copy()
+        simulated_shifts.append((current_shift["start"], current_shift["end"]))
+        
+        # Check next N shifts to see how many this person could still take
+        for i, future_shift in enumerate(upcoming_shifts[:lookahead_depth]):
+            if i >= lookahead_depth:
+                break
+            
+            future_day_idx = future_shift['start'] // 288
+            
+            # Can this person take the future shift after taking current shift?
+            can_take = True
+            
+            # Check rest constraint
+            if future_shift["start"] < simulated_end_time + REST_INTERVALS:
+                can_take = False
+            
+            # Check hours constraint
+            if simulated_hours + future_shift['duration'] > max_weekly_hours:
+                can_take = False
+            
+            # Check off-day policy
+            if can_take:
+                temp_person = {
+                    'days_worked': simulated_days,
+                    'shift_times': simulated_shifts,
+                    'weekly_hours': simulated_hours
+                }
+                if violates_off_day_policy(temp_person, future_day_idx, future_shift["start"], future_shift["end"]):
+                    can_take = False
+            
+            if can_take:
+                # Award points for being able to take future shifts
+                # Earlier shifts worth more (decay factor)
+                decay = 1.0 / (i + 1)
+                # Longer shifts worth more (better hour utilization)
+                score += future_shift['duration'] * decay
+                
+                # Update simulation state
+                simulated_end_time = max(simulated_end_time, future_shift["end"])
+                simulated_hours += future_shift['duration']
+                simulated_days.add(future_day_idx)
+                simulated_shifts.append((future_shift["start"], future_shift["end"]))
+        
+        # Bonus: Prefer assignments that keep workers below min hours threshold
+        # (helps distribute work more evenly)
+        if person['weekly_hours'] < min_weekly_hours:
+            score += 5.0
+        
+        return score
+    
     # Helper function to check if assigning a shift violates the off-day policy
     def violates_off_day_policy(person, shift_day_idx, shift_start_idx, shift_end_idx):
         if min_days_off == 1.0:
@@ -446,25 +512,19 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
                 return True
         return False
 
-    for shift in all_assigned_shifts:
+    # ============ MAIN ASSIGNMENT LOOP WITH LOOK-AHEAD ============
+    for shift_idx, shift in enumerate(all_assigned_shifts):
         assigned = False
         shift_day_idx = shift['start'] // 288  # Which day (0-6) this shift starts on
+        
+        # Get upcoming shifts for look-ahead analysis
+        upcoming_shifts = all_assigned_shifts[shift_idx + 1 : shift_idx + 4]  # Next 3 shifts
         
         # Calculate max working days based on off-day policy
         max_working_days = 7 - math.ceil(min_days_off)
         
-        # Sorting Strategy for efficient packing:
-        # 1. Prioritize workers who haven't maxed out their working days yet
-        # 2. Among those, prioritize workers furthest below min hours
-        # 3. Then those available earliest (by rest constraint)
-        # 4. Finally those with most remaining hour capacity
-        personnel_pool.sort(key=lambda x: (
-            len(x['days_worked']) >= max_working_days,  # Haven't maxed days comes first
-            x['weekly_hours'] >= min_weekly_hours,  # Below min hours comes first
-            -1 * (min_weekly_hours - x['weekly_hours']) if x['weekly_hours'] < min_weekly_hours else 0,  # Furthest below min
-            x['end_time'],  # Available earliest
-            -1 * (max_weekly_hours - x['weekly_hours'])  # Most remaining capacity
-        ))
+        # Find all eligible workers (those who CAN take this shift)
+        eligible_workers = []
         
         for p in personnel_pool:
             # Check 1: Rest Constraint (12h since their last shift ended)
@@ -473,13 +533,36 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
                 if p['weekly_hours'] + shift['duration'] <= max_weekly_hours:
                     # Check 3: Off-Day Policy Constraint
                     if not violates_off_day_policy(p, shift_day_idx, shift["start"], shift["end"]):
-                        p['end_time'] = shift["end"]
-                        p['weekly_hours'] += shift["duration"]
-                        p['days_worked'].add(shift_day_idx)
-                        p['shift_times'].append((shift["start"], shift["end"]))
-                        p_id = p['id']
-                        assigned = True
-                        break
+                        # This worker is eligible!
+                        # Calculate their look-ahead score
+                        lookahead_score = calculate_lookahead_score(p, shift, upcoming_shifts)
+                        
+                        eligible_workers.append({
+                            'worker': p,
+                            'score': lookahead_score,
+                            'days_worked': len(p['days_worked']),
+                            'weekly_hours': p['weekly_hours'],
+                            'end_time': p['end_time']
+                        })
+        
+        # Sort eligible workers by look-ahead score (descending) and other criteria
+        if eligible_workers:
+            eligible_workers.sort(key=lambda x: (
+                x['days_worked'] >= max_working_days,  # Haven't maxed days comes first
+                x['weekly_hours'] >= min_weekly_hours,  # Below min hours comes first
+                -x['score'],  # HIGHEST look-ahead score comes first (best future compatibility)
+                -1 * (min_weekly_hours - x['weekly_hours']) if x['weekly_hours'] < min_weekly_hours else 0,
+                x['end_time']
+            ))
+            
+            # Assign to the best worker
+            best_worker = eligible_workers[0]['worker']
+            best_worker['end_time'] = shift["end"]
+            best_worker['weekly_hours'] += shift["duration"]
+            best_worker['days_worked'].add(shift_day_idx)
+            best_worker['shift_times'].append((shift["start"], shift["end"]))
+            p_id = best_worker['id']
+            assigned = True
         
         if not assigned:
             # Before creating a new worker, verify that NONE of the existing workers can take this shift
