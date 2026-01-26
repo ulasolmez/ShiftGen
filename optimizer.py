@@ -236,8 +236,53 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
     shuttle_in_vars = pulp.LpVariable.dicts("ShuttleIn", shuttle_windows_indices, lowBound=0, cat='Integer')
     shuttle_out_vars = pulp.LpVariable.dicts("ShuttleOut", shuttle_windows_indices, lowBound=0, cat='Integer')
 
-    # Objective: Minimize headcount + small penalty for shuttles
-    prob += pulp.lpSum([shift_vars[s["id"]] for s in shifts]) + 0.1 * pulp.lpSum([shuttle_in_vars[t] + shuttle_out_vars[t] for t in shuttle_windows_indices])
+    # ============ SYMMETRY BREAKING & OBJECTIVE ============
+    # Add preference for longer shifts (better packing) and reduce solver symmetry
+    print("Adding symmetry breaking and packing preference...")
+    
+    # Calculate shift packing efficiency: longer shifts are more efficient
+    shift_efficiency = {}
+    for s in shifts:
+        # Efficiency = hours / (1 + gaps), prefer longer, contiguous shifts
+        shift_efficiency[s["id"]] = s["duration"] / max_shift_length  # Normalized 0-1
+    
+    # Objective: Minimize headcount + small penalty for shuttles + small bonus for efficient shifts
+    # The negative term on efficiency means we PREFER (reward) longer shifts
+    prob += (
+        pulp.lpSum([shift_vars[s["id"]] for s in shifts])  # Minimize total shifts (primary)
+        + 0.1 * pulp.lpSum([shuttle_in_vars[t] + shuttle_out_vars[t] for t in shuttle_windows_indices])  # Shuttle penalty
+        - 0.01 * pulp.lpSum([shift_vars[s["id"]] * shift_efficiency[s["id"]] for s in shifts])  # Prefer longer shifts
+    )
+    
+    # Add lexicographic ordering for shifts covering the same intervals
+    # Group by: (day, start_time_rounded, coverage_pattern)
+    coverage_groups = {}
+    for s in shifts:
+        # Create signature based on which hours are covered
+        start_hour = (s["global_start_idx"] % 288) // 12
+        coverage_sig = tuple(sorted([i // 12 for i in range(num_intervals) if s["coverage"][i] == 1]))
+        key = (s["day_idx"], start_hour, coverage_sig[:3])  # Day + start hour + first 3 hours covered
+        
+        if key not in coverage_groups:
+            coverage_groups[key] = []
+        coverage_groups[key].append(s["id"])
+    
+    # For each group with multiple shifts, prefer longer ones
+    symmetry_constraints = 0
+    for key, shift_ids in coverage_groups.items():
+        if len(shift_ids) > 1:
+            # Sort by duration (descending), then by ID
+            shift_ids_with_dur = [(sid, next(s["duration"] for s in shifts if s["id"] == sid)) for sid in shift_ids]
+            shift_ids_with_dur.sort(key=lambda x: (-x[1], x[0]))
+            
+            # Add weak ordering: prefer using longer shifts before shorter ones
+            for i in range(len(shift_ids_with_dur) - 1):
+                # If both shifts cover similar intervals, use the longer one more
+                prob += shift_vars[shift_ids_with_dur[i][0]] >= shift_vars[shift_ids_with_dur[i+1][0]]
+                symmetry_constraints += 1
+    
+    if symmetry_constraints > 0:
+        print(f"Added {symmetry_constraints} symmetry breaking constraints for {len([g for g in coverage_groups.values() if len(g) > 1])} shift groups")
     
     print("Adding workload and shuttle constraints...")
     under_covered_intervals = []  # Track intervals that need additional shift options
