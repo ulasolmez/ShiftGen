@@ -139,6 +139,19 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
                     if end_time_str not in shuttle_windows:
                         continue
                     duration_intervals = int(duration_hours * 12)
+                    
+                    # Validate shift doesn't span excessive zero-workload periods
+                    # Check if more than 50% of shift duration is during zero-demand intervals
+                    zero_count = 0
+                    for i in range(duration_intervals):
+                        check_idx = (global_start_idx + i) % num_intervals
+                        if final_required[check_idx] == 0:
+                            zero_count += 1
+                    
+                    # Skip shifts that are mostly during zero-demand periods
+                    if zero_count > (duration_intervals * 0.5):
+                        continue
+                    
                     coverage = np.zeros(num_intervals, dtype=int)
                     for i in range(duration_intervals):
                         coverage[(global_start_idx + i) % num_intervals] = 1
