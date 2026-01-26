@@ -246,8 +246,9 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
                     "raw_end": s["end_time"]
                 })
 
-    # Sort shifts by start time to assign greedily
-    all_assigned_shifts.sort(key=lambda x: x["start"])
+    # Sort shifts: earliest start first; for same start, longest duration first
+    # Longest duration first helps in packing hours more efficiently into existing workers
+    all_assigned_shifts.sort(key=lambda x: (x["start"], -x["duration"]))
     
     # 12-hour rest requirement in intervals (12h * 12 intervals/h = 144)
     REST_INTERVALS = 144
@@ -259,11 +260,18 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
     for shift in all_assigned_shifts:
         assigned = False
         # Try to find a person who has rested enough AND has not exceeded weekly hours
-        # Sort people by their end_time to reuse those available earliest, minimizing headcount
-        personnel_pool.sort(key=lambda x: x['end_time'])
+        # Sorting Strategy:
+        # 1. Prioritize those who are still below min_weekly_hours (False < True)
+        # 2. Among those, prioritize those with the FEWEST hours worked (leveling)
+        # 3. Finally, use end_time to pick those available earliest (minimizes headcount inflation)
+        personnel_pool.sort(key=lambda x: (
+            x['weekly_hours'] >= min_weekly_hours, 
+            x['weekly_hours'],
+            x['end_time']
+        ))
         
         for p in personnel_pool:
-            # Check 1: Rest Constraint
+            # Check 1: Rest Constraint (12h since their last shift ended)
             if shift["start"] >= p['end_time'] + REST_INTERVALS:
                 # Check 2: Max Hours Constraint
                 if p['weekly_hours'] + shift['duration'] <= max_weekly_hours:
@@ -288,7 +296,9 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
             "Day": shift["day_idx"],
             "Shift": shift["display"],
             "Start": shift["raw_start"],
-            "End": shift["raw_end"]
+            "End": shift["raw_end"],
+            "duration_intervals": int(shift["duration"] * 12),
+            "start_idx": shift["start"]
         })
 
     # Summary Stats
@@ -302,17 +312,9 @@ def solve_weekly_shift_optimization(csv_path="workload_weekly.csv", max_fte=None
     arrivals = np.zeros(num_intervals)
     departures = np.zeros(num_intervals)
     for r in roster_rows:
-        day_df = df[df['day_name'] == r['Day']]
-        s_idx = day_df[day_df['time'] == r['Start']].index[0]
-        # Duration is needed to find end_idx
-        h_s, m_s = map(int, r['Start'].split(":"))
-        h_e, m_e = map(int, r['End'].split(":"))
-        # Using a simple duration calculation for end_idx
-        # Find duration from shift display "HHMM-HHMM"
-        start_hhmm = int(r['Shift'].split("-")[0])
-        end_hhmm = int(r['Shift'].split("-")[1])
-        # It's better to just re-match end time in df
-        e_idx = day_df[day_df['time'] == r['End']].index[0] if r['End'] in day_df['time'].values else (s_idx + 96) % num_intervals
+        s_idx = r['start_idx']
+        d_ints = r['duration_intervals']
+        e_idx = (s_idx + d_ints) % num_intervals
         
         arrivals[s_idx] += 1
         departures[e_idx] += 1
