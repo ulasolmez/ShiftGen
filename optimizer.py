@@ -223,58 +223,30 @@ def _assign_personnel(all_assigned_shifts, max_weekly_hours, min_weekly_hours, m
     def respects_rest(person, shift_start, shift_end):
         """Check 12h rest between all existing shifts and the new shift."""
         for (s, e) in person['shift_times']:
-            # New shift must not overlap and must have 12h gap in both directions
             if not (shift_end + REST_INTERVALS <= s or shift_start >= e + REST_INTERVALS):
                 return False
         return True
 
-    def try_assign(shift, prefer_underfilled=True):
-        """Try to assign a shift to an existing worker. Returns person_id or None."""
+    def can_assign(person, shift):
+        """Check if a shift can be assigned to this person."""
         shift_day_idx = shift['start'] // 288
+        if person['weekly_hours'] + shift['duration'] > max_weekly_hours:
+            return False
+        if not respects_rest(person, shift['start'], shift['end']):
+            return False
+        if violates_off_day_policy(person, shift_day_idx, shift['start'], shift['end']):
+            return False
+        return True
 
-        # Sort: prioritize workers who need more hours (below min), then by capacity
-        if prefer_underfilled:
-            personnel_pool.sort(key=lambda x: (
-                len(x['days_worked']) >= max_working_days and shift_day_idx not in x['days_worked'],
-                x['weekly_hours'] >= min_weekly_hours,
-                -1 * (min_weekly_hours - x['weekly_hours']) if x['weekly_hours'] < min_weekly_hours else 0,
-                len(x['shift_times']),
-                -1 * (max_weekly_hours - x['weekly_hours'])
-            ))
-        else:
-            personnel_pool.sort(key=lambda x: (
-                len(x['days_worked']) >= max_working_days and shift_day_idx not in x['days_worked'],
-                -1 * x['weekly_hours'],  # prefer fuller workers (pack them tight)
-            ))
-
-        for p in personnel_pool:
-            if p['weekly_hours'] + shift['duration'] > max_weekly_hours:
-                continue
-            if not respects_rest(p, shift['start'], shift['end']):
-                continue
-            if violates_off_day_policy(p, shift_day_idx, shift['start'], shift['end']):
-                continue
-            # Assign
-            p['weekly_hours'] += shift['duration']
-            p['days_worked'].add(shift_day_idx)
-            p['shift_times'].append((shift['start'], shift['end']))
-            return p['id']
-        return None
-
-    def create_new_worker(shift):
-        """Create a new worker and assign the shift."""
+    def assign_shift(person, shift, orig_idx):
+        """Assign a shift to a person."""
         shift_day_idx = shift['start'] // 288
-        new_id = len(personnel_pool) + 1
-        personnel_pool.append({
-            'id': new_id,
-            'weekly_hours': shift['duration'],
-            'days_worked': {shift_day_idx},
-            'shift_times': [(shift['start'], shift['end'])]
-        })
-        return new_id
+        person['weekly_hours'] += shift['duration']
+        person['days_worked'].add(shift_day_idx)
+        person['shift_times'].append((shift['start'], shift['end']))
+        shift_to_person[orig_idx] = person['id']
 
     # ========= SPLIT SHIFTS BY DAY =========
-    # Group shifts and remember original indices for roster output
     indexed_shifts = list(enumerate(all_assigned_shifts))
     
     sunday_shifts = [(i, s) for i, s in indexed_shifts if s['start'] // 288 == 6]
@@ -284,65 +256,108 @@ def _assign_personnel(all_assigned_shifts, max_weekly_hours, min_weekly_hours, m
     # Sort within each group by start time, prefer longer shifts first
     sunday_shifts.sort(key=lambda x: (x[1]['start'], -x[1]['duration']))
     saturday_shifts.sort(key=lambda x: (x[1]['start'], -x[1]['duration']))
-    weekday_shifts.sort(key=lambda x: (x[1]['start'], -x[1]['duration']))
+    # Interleave weekdays across days for even spread
+    weekday_by_day = {d: [] for d in range(5)}
+    for i, s in weekday_shifts:
+        weekday_by_day[s['start'] // 288].append((i, s))
+    for d in range(5):
+        weekday_by_day[d].sort(key=lambda x: (x[1]['start'], -x[1]['duration']))
+    
+    interleaved_weekdays = []
+    positions = {d: 0 for d in range(5)}
+    any_left = True
+    while any_left:
+        any_left = False
+        for d in range(5):
+            if positions[d] < len(weekday_by_day[d]):
+                interleaved_weekdays.append(weekday_by_day[d][positions[d]])
+                positions[d] += 1
+                any_left = True
 
-    # ========= PASS 1: SEED WITH SUNDAY SHIFTS =========
-    # Assign Sunday shifts first — these workers will get filled with earlier-week shifts
-    for idx, shift in sunday_shifts:
-        p_id = try_assign(shift, prefer_underfilled=True)
-        if p_id is None:
-            p_id = create_new_worker(shift)
-        shift_to_person[idx] = p_id
-
-    sunday_workers = len(personnel_pool)
-    print(f"    Pass 1 (Sunday seed): {len(sunday_shifts)} shifts → {sunday_workers} workers")
-
-    # ========= PASS 2: FILL SATURDAY (BACKWARD) =========
-    for idx, shift in saturday_shifts:
-        p_id = try_assign(shift, prefer_underfilled=True)
-        if p_id is None:
-            p_id = create_new_worker(shift)
-        shift_to_person[idx] = p_id
-
-    sat_workers = len(personnel_pool)
-    print(f"    Pass 2 (Saturday fill): {len(saturday_shifts)} shifts → {sat_workers - sunday_workers} new workers")
-
-    # ========= PASS 3: FILL WEEKDAYS (MON→FRI) =========
-    for idx, shift in weekday_shifts:
-        p_id = try_assign(shift, prefer_underfilled=True)
-        if p_id is None:
-            p_id = create_new_worker(shift)
-        shift_to_person[idx] = p_id
+    # ========= BIN-PACKING ASSIGNMENT =========
+    # Strategy: assign Sunday first (seed), then Saturday, then interleaved weekdays.
+    # Within each pass, prefer the worker with the MOST remaining capacity who
+    # is still BELOW min hours. If all workers are above min, prefer the one
+    # with the most room to pack tightly.
+    
+    all_ordered = sunday_shifts + saturday_shifts + interleaved_weekdays
+    
+    for idx, shift in all_ordered:
+        shift_day_idx = shift['start'] // 288
+        
+        # Split candidates into underfilled and filled
+        underfilled = [p for p in personnel_pool if p['weekly_hours'] < min_weekly_hours and can_assign(p, shift)]
+        filled = [p for p in personnel_pool if p['weekly_hours'] >= min_weekly_hours and can_assign(p, shift)]
+        
+        assigned = False
+        
+        # Priority 1: Assign to underfilled worker with most deficit (needs hours most)
+        if underfilled:
+            # Prefer worker who needs the most hours (largest deficit)
+            underfilled.sort(key=lambda x: x['weekly_hours'])
+            assign_shift(underfilled[0], shift, idx)
+            assigned = True
+        
+        # Priority 2: Assign to filled worker with most capacity left (pack efficiently)
+        elif filled:
+            filled.sort(key=lambda x: x['weekly_hours'])
+            assign_shift(filled[0], shift, idx)
+            assigned = True
+        
+        # Priority 3: Create new worker
+        if not assigned:
+            new_id = len(personnel_pool) + 1
+            new_worker = {
+                'id': new_id,
+                'weekly_hours': 0.0,
+                'days_worked': set(),
+                'shift_times': []
+            }
+            personnel_pool.append(new_worker)
+            assign_shift(new_worker, shift, idx)
 
     total_workers = len(personnel_pool)
-    print(f"    Pass 3 (Weekday fill): {len(weekday_shifts)} shifts → {total_workers - sat_workers} new workers")
+    sun_worker_count = sum(1 for p in personnel_pool if 6 in p['days_worked'])
+    print(f"    Assignment: {len(all_ordered)} shifts → {total_workers} workers ({sun_worker_count} work Sunday)")
 
-    # ========= PASS 4: REDISTRIBUTION =========
-    # Try to move shifts from overloaded workers to underutilized ones
-    underfilled = [p for p in personnel_pool if p['weekly_hours'] < min_weekly_hours]
-    if underfilled:
-        # For each underfilled worker, see if we can steal compatible shifts from other workers
-        # who have shifts on days the underfilled worker doesn't work yet
-        redistributed = 0
+    # ========= PASS 4: REDISTRIBUTION (MULTI-PASS) =========
+    # Multiple passes to move shifts from overloaded/medium workers to underfilled ones.
+    # Also try to eliminate very lightly-loaded workers by moving ALL their shifts out.
+    total_redistributed = 0
+    for redist_pass in range(8):  # Up to 8 redistribution passes
+        underfilled = [p for p in personnel_pool if 0 < p['weekly_hours'] < min_weekly_hours]
+        if not underfilled:
+            break
+        
+        redistributed_this_pass = 0
+        # Sort underfilled by hours ascending (help the emptiest first)
+        underfilled.sort(key=lambda x: x['weekly_hours'])
+        
         for uf in underfilled:
             if uf['weekly_hours'] >= min_weekly_hours:
                 continue
-            needed = min_weekly_hours - uf['weekly_hours']
-            # Look for shifts we can move from workers above min hours
-            for donor in personnel_pool:
-                if donor['id'] == uf['id']:
-                    continue
-                if donor['weekly_hours'] <= min_weekly_hours:
-                    continue  # Don't steal from other underfilled workers
-                
-                # Try each of the donor's shifts
+            
+            # Allow donors to drop lower as a function of how underfilled the recipient is
+            # Very underfilled recipients (<50% min) can pull from donors even if it drops them to 80% min
+            uf_deficit_ratio = uf['weekly_hours'] / max(min_weekly_hours, 1)
+            donor_floor = min_weekly_hours * (0.7 if uf_deficit_ratio < 0.5 else 0.9)
+            
+            # Sort donors: prefer those well above min hours
+            donors = sorted(
+                [p for p in personnel_pool if p['id'] != uf['id'] and p['weekly_hours'] > donor_floor + 3],
+                key=lambda x: -x['weekly_hours']
+            )
+            
+            for donor in donors:
+                if uf['weekly_hours'] >= min_weekly_hours:
+                    break
                 for shift_time in list(donor['shift_times']):
                     s_start, s_end = shift_time
                     s_day = s_start // 288
                     s_duration = (s_end - s_start) / 12.0
                     
-                    # Would donor still be above min after losing this shift?
-                    if donor['weekly_hours'] - s_duration < min_weekly_hours:
+                    # Would donor still be above floor after losing this shift?
+                    if donor['weekly_hours'] - s_duration < donor_floor:
                         continue
                     # Can underfilled worker take it?
                     if uf['weekly_hours'] + s_duration > max_weekly_hours:
@@ -369,14 +384,69 @@ def _assign_personnel(all_assigned_shifts, max_weekly_hours, min_weekly_hours, m
                                 shift_to_person[orig_idx] = uf['id']
                                 break
                     
-                    redistributed += 1
+                    redistributed_this_pass += 1
                     if uf['weekly_hours'] >= min_weekly_hours:
                         break
-                if uf['weekly_hours'] >= min_weekly_hours:
-                    break
         
-        if redistributed > 0:
-            print(f"    Redistribution: moved {redistributed} shifts to fill underfilled workers")
+        total_redistributed += redistributed_this_pass
+        if redistributed_this_pass == 0:
+            break
+    
+    # Pass 4b: Try to eliminate very lightly-loaded workers (< 50% of min hours)
+    # by moving ALL their shifts to other workers who have room
+    light_workers = [p for p in personnel_pool if 0 < p['weekly_hours'] < min_weekly_hours * 0.5]
+    eliminated = 0
+    for lw in light_workers:
+        # Try to move every shift of this worker to someone else
+        all_movable = True
+        moves = []  # (shift_time, target_worker)
+        for shift_time in list(lw['shift_times']):
+            s_start, s_end = shift_time
+            s_day = s_start // 288
+            s_duration = (s_end - s_start) / 12.0
+            
+            found_target = False
+            for target in personnel_pool:
+                if target['id'] == lw['id'] or target['weekly_hours'] == 0:
+                    continue
+                if target['weekly_hours'] + s_duration > max_weekly_hours:
+                    continue
+                if not respects_rest(target, s_start, s_end):
+                    continue
+                if violates_off_day_policy(target, s_day, s_start, s_end):
+                    continue
+                moves.append((shift_time, target))
+                found_target = True
+                break
+            if not found_target:
+                all_movable = False
+                break
+        
+        if all_movable and moves:
+            for shift_time, target in moves:
+                s_start, s_end = shift_time
+                s_day = s_start // 288
+                s_duration = (s_end - s_start) / 12.0
+                
+                lw['shift_times'].remove(shift_time)
+                lw['weekly_hours'] -= s_duration
+                
+                target['shift_times'].append(shift_time)
+                target['weekly_hours'] += s_duration
+                target['days_worked'].add(s_day)
+                
+                for orig_idx, pid in shift_to_person.items():
+                    if pid == lw['id']:
+                        orig_shift = all_assigned_shifts[orig_idx]
+                        if orig_shift['start'] == s_start and orig_shift['end'] == s_end:
+                            shift_to_person[orig_idx] = target['id']
+                            break
+            
+            lw['days_worked'] = set()
+            eliminated += 1
+    
+    if total_redistributed > 0 or eliminated > 0:
+        print(f"    Redistribution: moved {total_redistributed} shifts, eliminated {eliminated} light workers")
 
     # ========= PASS 5: REMOVE EMPTY WORKERS & COMPACT IDs =========
     # Remove workers with 0 shifts (possible after redistribution)
@@ -430,8 +500,8 @@ def solve_weekly_shift_optimization(
     max_headcount=None,
     min_weekly_hours=35.0,
     max_weekly_hours=48.0,
-    min_shift_length=4.0,
-    max_shift_length=11.0,
+    min_shift_length=3.0,
+    max_shift_length=12.0,
     min_days_off=1.0,
     auto_shuttle=False,
     add_handover_buffer=False,
@@ -579,16 +649,20 @@ def solve_weekly_shift_optimization(
     print(f"  Tiered over-coverage penalty: {len(overcov_vars)} intervals tracked")
 
     # ============ OBJECTIVE ============
-    # 1. Primary: minimize total shifts (headcount)
-    # 2. Over-coverage penalty: strongly penalize excess staff at each interval
+    # 1. Primary: minimize total shifts (headcount) — weighted to compete with overcov
+    # 2. Over-coverage penalty: penalize excess staff at each interval
     # 3. Waste penalty: prefer shifts that cover actual demand, not dead time
     # 4. Shuttle penalty: consolidate shuttle events
+    # 5. Valley smoothing: penalize coverage changes between adjacent intervals
+    # 6. Peak concurrent penalty: discourage high concurrent peaks
     obj_terms = []
 
-    # (1) Total shifts — main objective
+    # (1) Total shifts — scaled up so adding a shift is meaningful vs overcov
+    # Each shift should cost roughly the same as overcov over ~1 hour (12 intervals)
+    shift_weight = 12.0  # each shift costs as much as 12 interval-units of overcov
     for occ_name, shifts in all_occ_shifts.items():
         sv = occ_shift_vars[occ_name]
-        obj_terms.append(pulp.lpSum([sv[s["id"]] for s in shifts]))
+        obj_terms.append(shift_weight * pulp.lpSum([sv[s["id"]] for s in shifts]))
 
     # (2) Over-coverage penalty — tiered (piecewise-linear quadratic approx)
     # Tier 1: moderate penalty for any excess (0..2 above required)
@@ -599,12 +673,11 @@ def solve_weekly_shift_optimization(
     # total excess across all intervals.
     num_active_intervals = len(overcov_vars)
     if num_active_intervals > 0:
-        # Each unit of overcov across all intervals should cost MORE than
-        # the 1 shift it would take to split a long shift into short ones.
-        # With ~1200 active intervals, weight=1.0 per unit means avg excess of 1
-        # costs 1200 — much more than adding a shift (cost=1). This strongly
-        # pushes the solver to minimize excess even at the cost of more shifts.
-        base_weight = 1.0
+        # Balance: overcov weight 0.5 per interval-unit, shift weight 12 per shift.
+        # Adding 1 extra shift (cost 12) to eliminate 1 unit of excess across 12 intervals
+        # saves 6, net cost +6 — solver won't split unless excess is large.
+        # But tier 2/3 make large excess very expensive, pushing splits only when needed.
+        base_weight = 0.5
         obj_terms.append(base_weight * pulp.lpSum(list(overcov_vars.values())))
         obj_terms.append(base_weight * 3.0 * pulp.lpSum(list(overcov_vars_t2.values())))
         obj_terms.append(base_weight * 6.0 * pulp.lpSum(list(overcov_vars_t3.values())))
@@ -620,20 +693,64 @@ def solve_weekly_shift_optimization(
         if waste_terms:
             obj_terms.append(pulp.lpSum(waste_terms))
 
-    # (4) Shuttle events penalty — discourage many distinct shuttle windows
+    # (4) Shuttle events penalty — strongly discourage many distinct shuttle windows
     # Use binary indicators: is there ANY shuttle activity at this window?
     shuttle_active_vars = {}
+    # Group shuttle windows by day for per-day capping
+    shuttle_windows_by_day = {}  # day_idx -> list of window indices
     for t in shuttle_windows_indices:
         sa = pulp.LpVariable(f"shuttle_active_{t}", cat='Binary')
         shuttle_active_vars[t] = sa
         # Big-M: if any shuttle at t, sa=1
         big_M = 500
         prob += shuttle_in_vars[t] + shuttle_out_vars[t] <= big_M * sa
+        
+        day_idx = t // 288
+        if day_idx not in shuttle_windows_by_day:
+            shuttle_windows_by_day[day_idx] = []
+        shuttle_windows_by_day[day_idx].append(t)
 
-    # Penalize number of active shuttle windows (consolidation)
-    # Plus smaller penalty on total shuttle count
-    obj_terms.append(1.0 * pulp.lpSum(list(shuttle_active_vars.values())))
-    obj_terms.append(0.05 * pulp.lpSum([shuttle_in_vars[t] + shuttle_out_vars[t] for t in shuttle_windows_indices]))
+    # HARD CONSTRAINT: Limit active shuttle windows per day
+    # This is what actually prevents "shuttles every 30 min" — 
+    # the solver can pick the BEST N windows each day, but no more.
+    max_shuttle_windows_per_day = 10  # max 10 distinct shuttle events per day
+    for day_idx, day_windows in shuttle_windows_by_day.items():
+        prob += pulp.lpSum([shuttle_active_vars[t] for t in day_windows]) <= max_shuttle_windows_per_day
+
+    # Soft penalty still pushes toward fewer windows within the cap
+    shuttle_window_weight = 5.0
+    obj_terms.append(shuttle_window_weight * pulp.lpSum(list(shuttle_active_vars.values())))
+    obj_terms.append(0.2 * pulp.lpSum([shuttle_in_vars[t] + shuttle_out_vars[t] for t in shuttle_windows_indices]))
+
+    # (5) Valley smoothing penalty — penalize coverage changes between adjacent intervals
+    # This prevents jagged coverage curves and encourages smooth bridging through valleys.
+    smoothing_vars = {}
+    for occ in occupation_data:
+        occ_name = occ["name"]
+        covers = occ_covers[occ_name]
+        final_req = occ["final_required"]
+        sv = occ_shift_vars[occ_name]
+        for t in range(num_intervals - 1):
+            # Only smooth within the same day and where both intervals have demand
+            if t % 288 == 287:  # day boundary
+                continue
+            if final_req[t] == 0 or final_req[t+1] == 0:
+                continue
+            if not covers[t] or not covers[t+1]:
+                continue
+            cov_t = pulp.lpSum([sv[sid] for sid in covers[t]])
+            cov_t1 = pulp.lpSum([sv[sid] for sid in covers[t+1]])
+            # Absolute difference via two slack vars
+            sm = pulp.LpVariable(f"smooth_{occ_name}_{t}", lowBound=0, cat='Continuous')
+            prob += sm >= cov_t - cov_t1
+            prob += sm >= cov_t1 - cov_t
+            smoothing_vars[(occ_name, t)] = sm
+
+    # Weight smoothing: each unit of coverage change costs a fraction of overcov weight
+    if smoothing_vars:
+        smoothing_weight = 0.1  # lighter than overcov but meaningful
+        obj_terms.append(smoothing_weight * pulp.lpSum(list(smoothing_vars.values())))
+        print(f"  Valley smoothing: {len(smoothing_vars)} adjacency pairs tracked")
 
     prob += pulp.lpSum(obj_terms)
 

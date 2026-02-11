@@ -27,8 +27,8 @@ shuttle_capacity = st.sidebar.number_input("Shuttle Capacity (Pax)", min_value=1
 
 st.sidebar.markdown("### ⏱️ Shift Constraints")
 c_min, c_max = st.sidebar.columns(2)
-min_shift_len = c_min.number_input("Min Shift (Hrs)", 4.0, 12.0, 4.0, 0.5)
-max_shift_len = c_max.number_input("Max Shift (Hrs)", 4.0, 12.0, 11.0, 0.5)
+min_shift_len = c_min.number_input("Min Shift (Hrs)", 3.0, 12.0, 3.0, 0.5)
+max_shift_len = c_max.number_input("Max Shift (Hrs)", 3.0, 12.0, 12.0, 0.5)
 
 add_buffer = st.sidebar.checkbox("Apply 30-min Prep/Handover Buffer", value=False, help="Forces shifts to start 30 mins early or stay 30 mins late around workload peaks.")
 peak_cutting = st.sidebar.checkbox("Ignore Short-Duration Peak Spikes", value=False, help="Smoothes out very short workload spikes (less than 30 mins).")
