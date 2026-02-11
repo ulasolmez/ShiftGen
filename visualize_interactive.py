@@ -62,51 +62,37 @@ def plot_weekly_results_interactive(coverage_csv="weekly_coverage_comparison.csv
                 fillcolor='rgba(0, 0, 255, 0.2)'
             ))
         else:
-            # Multi-occupation: stacked area with different colors
-            # Build cumulative coverage for stacking
-            cumulative = pd.Series(0.0, index=day_data.index)
+            # Multi-occupation view:
+            # - One single filled area for TOTAL coverage (all occupations combined)
+            # - Per-occupation required lines (dashed, each in its own color)
+            # - Total required line (solid red)
 
+            # Total coverage filled area (single color)
+            fig.add_trace(go.Scatter(
+                x=day_data['time'],
+                y=day_data['actual_coverage'],
+                fill='tozeroy',
+                mode='lines',
+                name='Total Coverage',
+                line=dict(color='rgba(65, 105, 225, 0.9)', width=2, shape='hv'),
+                fillcolor='rgba(65, 105, 225, 0.2)',
+            ))
+
+            # Per-occupation required workload lines (dashed, colored)
             for i, occ_name in enumerate(occ_names):
                 color = OCC_COLORS[i % len(OCC_COLORS)]
-                cov_col = f"coverage_{occ_name}"
                 req_col = f"required_{occ_name}"
 
-                this_coverage = day_data[cov_col] if cov_col in day_data.columns else pd.Series(0, index=day_data.index)
-                prev_cumulative = cumulative.copy()
-                cumulative = cumulative + this_coverage
-
-                # Stacked filled area: draw bottom line (invisible) then top line with fill
-                # Bottom boundary (previous cumulative)
-                fig.add_trace(go.Scatter(
-                    x=day_data['time'],
-                    y=prev_cumulative,
-                    mode='lines',
-                    line=dict(width=0),
-                    showlegend=False,
-                    hoverinfo='skip',
-                ))
-                # Top boundary (current cumulative) with fill to previous
-                fig.add_trace(go.Scatter(
-                    x=day_data['time'],
-                    y=cumulative,
-                    mode='lines',
-                    name=f'{occ_name} Coverage',
-                    line=dict(color=color["line"], width=1, shape='hv'),
-                    fill='tonexty',
-                    fillcolor=color["fill"],
-                ))
-
-                # Per-occupation required workload line (dashed)
                 if req_col in day_data.columns:
                     fig.add_trace(go.Scatter(
                         x=day_data['time'],
                         y=day_data[req_col],
                         mode='lines',
                         name=f'{occ_name} Required',
-                        line=dict(color=color["line"], width=2, dash='dash'),
+                        line=dict(color=color["line"], width=2, dash='dot'),
                     ))
 
-            # Total required workload line (bold red)
+            # Total required workload line (bold red, solid)
             fig.add_trace(go.Scatter(
                 x=day_data['time'],
                 y=day_data['required_headcount'],
