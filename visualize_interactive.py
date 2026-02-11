@@ -3,12 +3,35 @@ import plotly.graph_objects as go
 import plotly.express as px
 import os
 
+# Occupation color palette (up to 3 occupations)
+OCC_COLORS = [
+    {"line": "rgba(31, 119, 180, 1)",   "fill": "rgba(31, 119, 180, 0.35)", "name_color": "#1f77b4"},   # Blue
+    {"line": "rgba(44, 160, 44, 1)",    "fill": "rgba(44, 160, 44, 0.35)",  "name_color": "#2ca02c"},   # Green
+    {"line": "rgba(255, 127, 14, 1)",   "fill": "rgba(255, 127, 14, 0.35)", "name_color": "#ff7f0e"},   # Orange
+]
+
+def _detect_occupation_columns(df_cov):
+    """Detect coverage_* and required_* columns to find occupation names."""
+    occ_names = []
+    for col in df_cov.columns:
+        if col.startswith("coverage_"):
+            occ_name = col.replace("coverage_", "")
+            if f"required_{occ_name}" in df_cov.columns:
+                occ_names.append(occ_name)
+    return occ_names
+
 def plot_weekly_results_interactive(coverage_csv="weekly_coverage_comparison.csv", shifts_csv="assigned_shifts_weekly.csv", shuttle_csv="shuttle_report_weekly.csv"):
     if not os.path.exists(coverage_csv):
         return None, None, None
 
     df_cov = pd.read_csv(coverage_csv)
-    
+    occ_names = _detect_occupation_columns(df_cov)
+
+    # Fallback: single occupation mode (backward compatibility)
+    single_mode = len(occ_names) == 0
+    if single_mode:
+        occ_names = ["Staff"]
+
     # --- 1. Daily Coverage Charts ---
     days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
     daily_figs = {}
@@ -17,36 +40,89 @@ def plot_weekly_results_interactive(coverage_csv="weekly_coverage_comparison.csv
         day_data = df_cov[df_cov['day_name'] == day].copy()
         if day_data.empty:
             continue
-            
+
         fig = go.Figure()
-        
-        # Workload (Line)
-        fig.add_trace(go.Scatter(
-            x=day_data['time'], 
-            y=day_data['required_headcount'],
-            mode='lines',
-            name='Required Workload',
-            line=dict(color='red', width=2, dash='solid')
-        ))
-        
-        # Coverage Area (Filled)
-        fig.add_trace(go.Scatter(
-            x=day_data['time'], 
-            y=day_data['actual_coverage'],
-            fill='tozeroy',
-            mode='lines',
-            name='Staff Coverage',
-            line=dict(color='blue', width=2, shape='hv'),
-            fillcolor='rgba(0, 0, 255, 0.2)'
-        ))
-        
+
+        if single_mode:
+            # Original single-occupation view
+            fig.add_trace(go.Scatter(
+                x=day_data['time'],
+                y=day_data['required_headcount'],
+                mode='lines',
+                name='Required Workload',
+                line=dict(color='red', width=2, dash='solid')
+            ))
+            fig.add_trace(go.Scatter(
+                x=day_data['time'],
+                y=day_data['actual_coverage'],
+                fill='tozeroy',
+                mode='lines',
+                name='Staff Coverage',
+                line=dict(color='blue', width=2, shape='hv'),
+                fillcolor='rgba(0, 0, 255, 0.2)'
+            ))
+        else:
+            # Multi-occupation: stacked area with different colors
+            # Build cumulative coverage for stacking
+            cumulative = pd.Series(0.0, index=day_data.index)
+
+            for i, occ_name in enumerate(occ_names):
+                color = OCC_COLORS[i % len(OCC_COLORS)]
+                cov_col = f"coverage_{occ_name}"
+                req_col = f"required_{occ_name}"
+
+                this_coverage = day_data[cov_col] if cov_col in day_data.columns else pd.Series(0, index=day_data.index)
+                prev_cumulative = cumulative.copy()
+                cumulative = cumulative + this_coverage
+
+                # Stacked filled area: draw bottom line (invisible) then top line with fill
+                # Bottom boundary (previous cumulative)
+                fig.add_trace(go.Scatter(
+                    x=day_data['time'],
+                    y=prev_cumulative,
+                    mode='lines',
+                    line=dict(width=0),
+                    showlegend=False,
+                    hoverinfo='skip',
+                ))
+                # Top boundary (current cumulative) with fill to previous
+                fig.add_trace(go.Scatter(
+                    x=day_data['time'],
+                    y=cumulative,
+                    mode='lines',
+                    name=f'{occ_name} Coverage',
+                    line=dict(color=color["line"], width=1, shape='hv'),
+                    fill='tonexty',
+                    fillcolor=color["fill"],
+                ))
+
+                # Per-occupation required workload line (dashed)
+                if req_col in day_data.columns:
+                    fig.add_trace(go.Scatter(
+                        x=day_data['time'],
+                        y=day_data[req_col],
+                        mode='lines',
+                        name=f'{occ_name} Required',
+                        line=dict(color=color["line"], width=2, dash='dash'),
+                    ))
+
+            # Total required workload line (bold red)
+            fig.add_trace(go.Scatter(
+                x=day_data['time'],
+                y=day_data['required_headcount'],
+                mode='lines',
+                name='Total Required',
+                line=dict(color='red', width=2.5, dash='solid'),
+            ))
+
         fig.update_layout(
-            title=f"{day} Staffing Coverage",
+            title=f"{day} Staffing Coverage" + (f" ({len(occ_names)} Occupations)" if not single_mode else ""),
             xaxis_title="Time",
             yaxis_title="Headcount",
-            height=300,
+            height=350,
             margin=dict(l=20, r=20, t=40, b=20),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            hovermode="x unified",
         )
         daily_figs[day] = fig
 
@@ -55,27 +131,18 @@ def plot_weekly_results_interactive(coverage_csv="weekly_coverage_comparison.csv
     if os.path.exists(shuttle_csv):
         df_shuttle = pd.read_csv(shuttle_csv)
         if not df_shuttle.empty:
-            # Group by Time across all days to show average/total demand structure
-            # Or show full weekly timeline
-            
-            # Let's show full weekly timeline as a bar chart
-            # Create a datetime column for continuous x-axis
-            # We'll just fake it with Day + Time string for unique categorical axis
             df_shuttle['datetime_id'] = df_shuttle['Day'] + " " + df_shuttle['Time']
-            
-            # Filter non-zero entries to make chart readable
             df_active = df_shuttle[df_shuttle['Total_Shuttles'] > 0].copy()
-            
             if not df_active.empty:
                 shuttle_fig_hourly = px.bar(
-                    df_active, 
-                    x="datetime_id", 
+                    df_active,
+                    x="datetime_id",
                     y=["Shuttles_In", "Shuttles_Out"],
                     title="Shuttle Activity by Window (Weekly)",
                     labels={"value": "Shuttles", "datetime_id": "Time Window"},
                     height=400
                 )
-                shuttle_fig_hourly.update_layout(xaxis={'categoryorder':'array', 'categoryarray': df_shuttle['datetime_id']})
+                shuttle_fig_hourly.update_layout(xaxis={'categoryorder': 'array', 'categoryarray': df_shuttle['datetime_id']})
 
     # --- 3. Shuttle Daily Totals ---
     shuttle_fig_daily = None
