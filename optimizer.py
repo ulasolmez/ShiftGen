@@ -54,109 +54,50 @@ def _preprocess_workload(df, apply_peak_cutting, add_handover_buffer):
     return df, final_required
 
 
-def _detect_smart_shuttle_windows(all_occupation_data, min_gap_hours=2.0):
+def _detect_smart_shuttle_windows(all_occupation_data):
     """
-    Detect shuttle windows from workload transitions across ALL occupations.
-    Instead of every 30 min, pick only major transition times where combined
-    workload ramps up/down significantly, spaced at least min_gap_hours apart.
-    Returns a compact set of shuttle times (typically 6-12 per day).
+    Detect shuttle windows from workload shape across ALL occupations.
+    
+    Provides hourly windows during working hours so the solver has enough
+    granularity to match the workload curve tightly. The shuttle consolidation
+    penalty in the objective will discourage using too many of them.
     """
     num_intervals = len(all_occupation_data[0]["final_required"])
     combined = np.zeros(num_intervals)
     for occ in all_occupation_data:
         combined += np.array(occ["final_required"])
 
-    min_gap_slots = int(min_gap_hours * 12)  # in 5-min intervals
-
-    # Score each 30-min block across ALL days to find where transitions happen
-    # Use hourly blocks (12 intervals) to get coarser granularity
-    block_size = 6  # 30-min blocks
-    time_scores = {}  # time_str -> max score across all days
-
-    boundary_times = set()  # Work start/end times (always included)
-
+    # Find the work envelope across all days
+    earliest_start = 24
+    latest_end = 0
     for day_idx in range(7):
         day_start = day_idx * 288
         day_demand = combined[day_start:day_start + 288]
-
         nonzero = np.nonzero(day_demand)[0]
         if len(nonzero) == 0:
             continue
+        start_h = nonzero[0] // 12
+        end_h = min((nonzero[-1] // 12) + 1, 23)
+        earliest_start = min(earliest_start, start_h)
+        latest_end = max(latest_end, end_h)
 
-        work_start = nonzero[0]
-        work_end = nonzero[-1]
+    if earliest_start >= latest_end:
+        return [f"{h:02d}:00" for h in range(0, 24, 2)]
 
-        # Work start boundary (round down to nearest hour)
-        start_h = work_start // 12
-        boundary_times.add(f"{start_h:02d}:00")
-
-        # Work end boundary (round up to nearest hour)
-        end_h = min((work_end // 12) + 1, 23)
-        boundary_times.add(f"{end_h:02d}:00")
-
-        # Score transition blocks
-        for b in range(0, 288, block_size):
-            if b < work_start - block_size or b > work_end + block_size:
-                continue
-            block_end = min(b + block_size, 288)
-            block_vals = day_demand[b:block_end]
-            if len(block_vals) < 2:
-                continue
-
-            # Score = total absolute change across the block
-            total_change = sum(abs(block_vals[i+1] - block_vals[i]) for i in range(len(block_vals)-1))
-            ramp = abs(float(block_vals[-1]) - float(block_vals[0]))
-            score = max(total_change, ramp)
-
-            time_h = b // 12
-            time_m = (b % 12) * 5
-            if time_h >= 24:
-                continue
-            # Round to nearest hour for cleaner shuttle times
-            if time_m >= 30:
-                time_h = min(time_h + 1, 23)
-            time_str = f"{time_h:02d}:00"
-            time_scores[time_str] = max(time_scores.get(time_str, 0), score)
-
-    # Start with boundary times (work start/end)
-    selected = set(boundary_times)
-
-    # Sort candidates by score descending, greedily add if spaced enough
-    candidates = sorted(time_scores.items(), key=lambda x: -x[1])
-
-    def time_to_slot(t):
-        h, m = map(int, t.split(":"))
-        return h * 12 + m // 5
-
-    for time_str, score in candidates:
-        if score < 2:  # Ignore trivial changes
-            break
-        slot = time_to_slot(time_str)
-        too_close = False
-        for s in selected:
-            s_slot = time_to_slot(s)
-            if abs(slot - s_slot) < min_gap_slots and abs(slot - s_slot) > 0:
-                too_close = True
-                break
-        if not too_close:
-            selected.add(time_str)
-
-    # Cap at ~10 windows max — keep only the highest-scoring if too many
-    if len(selected) > 12:
-        # Keep boundaries + top scored
-        scored_selected = []
-        for t in selected:
-            if t in boundary_times:
-                scored_selected.append((float('inf'), t))
-            else:
-                scored_selected.append((time_scores.get(t, 0), t))
-        scored_selected.sort(key=lambda x: -x[0])
-        selected = set(t for _, t in scored_selected[:12])
-
-    result = sorted(selected)
-    if not result:
-        result = [f"{h:02d}:00" for h in range(0, 24, 3)]
-    return result
+    # Provide half-hourly windows from 1h before work start to 1h after work end
+    window_start = max(0, earliest_start - 1)
+    window_end = min(23, latest_end + 1)
+    
+    result = []
+    for h in range(window_start, window_end + 1):
+        result.append(f"{h:02d}:00")
+        result.append(f"{h:02d}:30")
+    
+    # Always include 00:00 for overnight boundary
+    if "00:00" not in result:
+        result = ["00:00"] + result
+    
+    return sorted(set(result))
 
 
 def _generate_shifts_for_occupation(day_idx, shuttle_windows, final_required, num_intervals,
@@ -536,7 +477,7 @@ def solve_weekly_shift_optimization(
 
     # ============ SHUTTLE WINDOWS (SHARED) ============
     if auto_shuttle:
-        shuttle_windows = _detect_smart_shuttle_windows(occupation_data, min_gap_hours=2.0)
+        shuttle_windows = _detect_smart_shuttle_windows(occupation_data)
         print(f"Smart auto-detected {len(shuttle_windows)} shuttle windows: {shuttle_windows}")
     elif custom_shuttle_windows:
         shuttle_windows = custom_shuttle_windows
@@ -605,11 +546,15 @@ def solve_weekly_shift_optimization(
     shuttle_in_vars = pulp.LpVariable.dicts("ShuttleIn", shuttle_windows_indices, lowBound=0, cat='Integer')
     shuttle_out_vars = pulp.LpVariable.dicts("ShuttleOut", shuttle_windows_indices, lowBound=0, cat='Integer')
 
-    # ============ OVER-COVERAGE SLACK VARIABLES ============
-    # For each interval with demand, add a slack variable measuring how much
-    # we exceed the requirement. Penalize it in the objective so coverage
-    # stays tangential to peaks rather than over-staffing.
-    overcov_vars = {}
+    # ============ OVER-COVERAGE PENALTY VARIABLES ============
+    # For each interval with demand, add slack variables measuring excess.
+    # Use tiered penalties (piecewise-linear approximation of quadratic)
+    # so small excess is tolerated but large excess is punished severely.
+    overcov_vars = {}       # tier 1: any excess
+    overcov_vars_t2 = {}    # tier 2: excess > 2
+    overcov_vars_t3 = {}    # tier 3: excess > 4
+    max_demand = max(max(occ["final_required"]) for occ in occupation_data)
+
     for occ in occupation_data:
         occ_name = occ["name"]
         covers = occ_covers[occ_name]
@@ -617,11 +562,21 @@ def solve_weekly_shift_optimization(
         sv = occ_shift_vars[occ_name]
         for t in range(num_intervals):
             if final_req[t] > 0 and covers[t]:
-                var_name = f"overcov_{occ_name}_{t}"
-                ov = pulp.LpVariable(var_name, lowBound=0, cat='Continuous')
-                overcov_vars[(occ_name, t)] = ov
-                # overcov >= actual_coverage - required
-                prob += ov >= pulp.lpSum([sv[sid] for sid in covers[t]]) - final_req[t]
+                cov_expr = pulp.lpSum([sv[sid] for sid in covers[t]])
+                # Tier 1: any excess above required
+                ov1 = pulp.LpVariable(f"overcov1_{occ_name}_{t}", lowBound=0, cat='Continuous')
+                overcov_vars[(occ_name, t)] = ov1
+                prob += ov1 >= cov_expr - final_req[t]
+                # Tier 2: excess above required + 2
+                ov2 = pulp.LpVariable(f"overcov2_{occ_name}_{t}", lowBound=0, cat='Continuous')
+                overcov_vars_t2[(occ_name, t)] = ov2
+                prob += ov2 >= cov_expr - final_req[t] - 2
+                # Tier 3: excess above required + 4
+                ov3 = pulp.LpVariable(f"overcov3_{occ_name}_{t}", lowBound=0, cat='Continuous')
+                overcov_vars_t3[(occ_name, t)] = ov3
+                prob += ov3 >= cov_expr - final_req[t] - 4
+
+    print(f"  Tiered over-coverage penalty: {len(overcov_vars)} intervals tracked")
 
     # ============ OBJECTIVE ============
     # 1. Primary: minimize total shifts (headcount)
@@ -635,11 +590,24 @@ def solve_weekly_shift_optimization(
         sv = occ_shift_vars[occ_name]
         obj_terms.append(pulp.lpSum([sv[s["id"]] for s in shifts]))
 
-    # (2) Over-coverage penalty — keeps coverage tangential to peaks
-    # Strong weight to force the solver to match demand closely
-    max_demand = max(max(occ["final_required"]) for occ in occupation_data)
-    overcov_weight = 2.0 / max(max_demand, 1)
-    obj_terms.append(overcov_weight * pulp.lpSum(list(overcov_vars.values())))
+    # (2) Over-coverage penalty — tiered (piecewise-linear quadratic approx)
+    # Tier 1: moderate penalty for any excess (0..2 above required)
+    # Tier 2: heavier penalty for excess > 2
+    # Tier 3: very heavy penalty for excess > 4
+    # Weight per interval-unit must be high enough to make the solver
+    # prefer splitting one long shift into two shorter ones when it reduces
+    # total excess across all intervals.
+    num_active_intervals = len(overcov_vars)
+    if num_active_intervals > 0:
+        # Each unit of overcov across all intervals should cost MORE than
+        # the 1 shift it would take to split a long shift into short ones.
+        # With ~1200 active intervals, weight=1.0 per unit means avg excess of 1
+        # costs 1200 — much more than adding a shift (cost=1). This strongly
+        # pushes the solver to minimize excess even at the cost of more shifts.
+        base_weight = 1.0
+        obj_terms.append(base_weight * pulp.lpSum(list(overcov_vars.values())))
+        obj_terms.append(base_weight * 3.0 * pulp.lpSum(list(overcov_vars_t2.values())))
+        obj_terms.append(base_weight * 6.0 * pulp.lpSum(list(overcov_vars_t3.values())))
 
     # (3) Waste penalty — prefer shifts whose coverage matches workload shape
     for occ_name, shifts in all_occ_shifts.items():

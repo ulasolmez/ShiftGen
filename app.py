@@ -45,7 +45,7 @@ off_days_policy = st.sidebar.selectbox(
 st.sidebar.markdown("---")
 st.sidebar.subheader("🚐 Shuttle Timeline Selection")
 
-auto_shuttle = st.sidebar.toggle("Auto-detect Shuttle Windows", value=True, help="Detects shuttle times from workload transition edges (ramp-up/down), spaced at least 2 hours apart.")
+auto_shuttle = st.sidebar.toggle("Auto-detect Shuttle Windows", value=True, help="Provides half-hourly shuttle windows during work hours for tight demand matching. Shuttle consolidation penalty keeps actual shuttle events reasonable.")
 
 if not auto_shuttle:
     st.sidebar.write("Manual selection (increments of 30 mins):")
