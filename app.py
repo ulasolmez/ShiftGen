@@ -227,9 +227,19 @@ if os.path.exists("weekly_summary.csv"):
                 occ_below = summary.iloc[0].get(f"{occ_name} - People Below Min Hours", "–")
                 color_emoji = ["🔵", "🟢", "🟠"][idx % 3]
                 st.markdown(f"**{color_emoji} {occ_name}**")
-                st.write(f"Headcount: **{int(occ_hc) if occ_hc != '–' else '–'}** | FTE: **{float(occ_fte):.2f}** | Hours: **{float(occ_hrs):.1f}**")
-                if occ_below != "–" and int(occ_below) > 0:
-                    st.caption(f"⚠️ {int(occ_below)} below min hours")
+                try:
+                    hc_str = str(int(occ_hc)) if occ_hc != "–" else "–"
+                    fte_str = f"{float(occ_fte):.2f}" if occ_fte != "–" else "–"
+                    hrs_str = f"{float(occ_hrs):.1f}" if occ_hrs != "–" else "–"
+                    st.write(f"Headcount: **{hc_str}** | FTE: **{fte_str}** | Hours: **{hrs_str}**")
+                except (ValueError, TypeError):
+                    st.write(f"Headcount: **{occ_hc}** | FTE: **{occ_fte}** | Hours: **{occ_hrs}**")
+                if occ_below != "–":
+                    try:
+                        if int(occ_below) > 0:
+                            st.caption(f"⚠️ {int(occ_below)} below min hours")
+                    except (ValueError, TypeError):
+                        pass
 
     # Validation warnings
     if target_max > 0:
