@@ -215,10 +215,11 @@ if os.path.exists("weekly_summary.csv"):
 
     # Per-occupation breakdown
     num_occ = int(summary.iloc[0].get('Num Occupations', 1))
-    if num_occ > 1:
+    if num_occ > 1 and active_workloads:
         st.markdown("#### Per-Occupation Breakdown")
-        occ_metrics_cols = st.columns(num_occ)
-        for idx, wl in enumerate(active_workloads):
+        display_workloads = active_workloads[:num_occ]
+        occ_metrics_cols = st.columns(len(display_workloads))
+        for idx, wl in enumerate(display_workloads):
             occ_name = wl["name"]
             with occ_metrics_cols[idx]:
                 occ_hc = summary.iloc[0].get(f"{occ_name} - Headcount", "–")
