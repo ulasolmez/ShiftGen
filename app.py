@@ -45,7 +45,7 @@ off_days_policy = st.sidebar.selectbox(
 st.sidebar.markdown("---")
 st.sidebar.subheader("🚐 Shuttle Timeline Selection")
 
-auto_shuttle = st.sidebar.toggle("Auto-detect Shuttle Windows", value=True, help="Automatically picks shuttle times based on workload changes.")
+auto_shuttle = st.sidebar.toggle("Auto-detect Shuttle Windows", value=True, help="Detects shuttle times from workload transition edges (ramp-up/down), spaced at least 2 hours apart.")
 
 if not auto_shuttle:
     st.sidebar.write("Manual selection (increments of 30 mins):")
@@ -56,7 +56,7 @@ if not auto_shuttle:
         selected_windows[t] = st.sidebar.checkbox(t, value=default_val, key=f"shuttle_{t}")
     shuttle_windows = [t for t, val in selected_windows.items() if val]
 else:
-    st.sidebar.info("Shuttles will be aligned to workload transitions automatically.")
+    st.sidebar.info("Shuttle windows will be auto-detected from workload edges (≥2h apart).")
     shuttle_windows = None
 
 # ============ MAIN LAYOUT: MULTI-OCCUPATION WORKLOAD ============

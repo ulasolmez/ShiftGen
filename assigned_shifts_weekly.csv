@@ -1,296 +1,124 @@
 Occupation,Day,Shift,Duration,Count
-Occupation 2,Monday,0100-0900,8.0,2
-Occupation 2,Monday,0600-1000,4.0,3
-Occupation 2,Monday,0630-1030,4.0,2
-Occupation 2,Monday,0630-1730,11.0,2
-Occupation 2,Monday,0700-1730,10.5,4
-Occupation 2,Monday,0800-1630,8.5,1
-Occupation 2,Monday,0800-1800,10.0,9
-Occupation 2,Monday,0800-1830,10.5,5
-Occupation 2,Monday,0830-1630,8.0,1
-Occupation 2,Monday,0830-1730,9.0,3
-Occupation 2,Monday,0830-1900,10.5,11
-Occupation 2,Monday,0830-1930,11.0,1
-Occupation 2,Monday,1400-2130,7.5,1
-Occupation 2,Monday,1430-0030,10.0,2
-Occupation 2,Monday,1430-0100,10.5,3
-Occupation 2,Monday,1430-2130,7.0,7
-Occupation 2,Tuesday,0030-0900,8.5,4
-Occupation 2,Tuesday,0030-1030,10.0,1
-Occupation 2,Tuesday,0500-0900,4.0,12
-Occupation 2,Tuesday,0530-1030,5.0,1
-Occupation 2,Tuesday,0630-1030,4.0,1
-Occupation 2,Tuesday,0700-1100,4.0,3
-Occupation 2,Tuesday,0730-1130,4.0,12
-Occupation 2,Tuesday,0830-1730,9.0,25
-Occupation 2,Tuesday,1430-2100,6.5,1
-Occupation 2,Tuesday,1430-2230,8.0,3
-Occupation 2,Tuesday,1530-2030,5.0,3
-Occupation 2,Tuesday,1630-2030,4.0,3
-Occupation 2,Tuesday,1630-2200,5.5,1
-Occupation 2,Tuesday,1630-2230,6.0,6
-Occupation 2,Tuesday,2000-0030,4.5,5
-Occupation 2,Wednesday,0200-1100,9.0,2
-Occupation 2,Wednesday,0330-1100,7.5,3
-Occupation 2,Wednesday,0530-1600,10.5,3
-Occupation 2,Wednesday,0630-1730,11.0,2
-Occupation 2,Wednesday,0730-1130,4.0,3
-Occupation 2,Wednesday,0730-1600,8.5,5
-Occupation 2,Wednesday,0800-1730,9.5,1
-Occupation 2,Wednesday,0830-1930,11.0,7
-Occupation 2,Wednesday,1030-2000,9.5,4
-Occupation 2,Wednesday,1500-2200,7.0,3
-Occupation 2,Wednesday,1530-0000,8.5,1
-Occupation 2,Wednesday,1530-1930,4.0,9
-Occupation 2,Wednesday,1530-2030,5.0,7
-Occupation 2,Wednesday,1530-2300,7.5,6
-Occupation 2,Wednesday,1830-0500,10.5,4
-Occupation 2,Thursday,0230-1130,9.0,4
-Occupation 2,Thursday,0600-1630,10.5,3
-Occupation 2,Thursday,0600-1700,11.0,3
-Occupation 2,Thursday,0700-1700,10.0,1
-Occupation 2,Thursday,0730-1830,11.0,3
-Occupation 2,Thursday,0800-1830,10.5,8
-Occupation 2,Thursday,0900-1830,9.5,6
-Occupation 2,Thursday,1100-1830,7.5,1
-Occupation 2,Thursday,1500-1900,4.0,4
-Occupation 2,Thursday,1600-0000,8.0,4
-Occupation 2,Thursday,1600-2000,4.0,9
-Occupation 2,Thursday,1600-2100,5.0,2
-Occupation 2,Thursday,2300-0900,10.0,2
-Occupation 2,Friday,0200-0900,7.0,4
-Occupation 2,Friday,0200-1000,8.0,2
-Occupation 2,Friday,0600-1030,4.5,2
-Occupation 2,Friday,0600-1100,5.0,7
-Occupation 2,Friday,0600-1430,8.5,4
-Occupation 2,Friday,0630-1030,4.0,4
-Occupation 2,Friday,0830-1430,6.0,2
-Occupation 2,Friday,0830-1800,9.5,2
-Occupation 2,Friday,1330-0000,10.5,2
-Occupation 2,Friday,1330-2030,7.0,1
-Occupation 2,Friday,1330-2130,8.0,1
-Occupation 2,Friday,1400-2000,6.0,2
-Occupation 2,Friday,1400-2130,7.5,14
-Occupation 2,Friday,1530-0130,10.0,1
-Occupation 2,Friday,1930-0130,6.0,2
-Occupation 2,Saturday,0100-0830,7.5,5
-Occupation 2,Saturday,0430-0830,4.0,5
-Occupation 2,Saturday,0700-1200,5.0,1
-Occupation 2,Saturday,0800-1200,4.0,3
-Occupation 2,Saturday,0800-1530,7.5,10
-Occupation 2,Saturday,0800-1800,10.0,1
-Occupation 2,Saturday,0800-1900,11.0,2
-Occupation 2,Saturday,1300-2100,8.0,1
-Occupation 2,Saturday,1430-2200,7.5,2
-Occupation 2,Saturday,1500-1930,4.5,8
-Occupation 2,Saturday,1500-2000,5.0,3
-Occupation 2,Saturday,1500-2100,6.0,4
-Occupation 2,Saturday,1500-2130,6.5,1
-Occupation 2,Saturday,1600-2200,6.0,2
-Occupation 2,Sunday,0200-0730,5.5,3
-Occupation 2,Sunday,0200-0900,7.0,5
-Occupation 2,Sunday,0600-1100,5.0,3
-Occupation 2,Sunday,0600-1700,11.0,1
-Occupation 2,Sunday,0630-1600,9.5,8
-Occupation 2,Sunday,0630-1700,10.5,1
-Occupation 2,Sunday,0630-1730,11.0,3
-Occupation 2,Sunday,1030-2000,9.5,1
-Occupation 2,Sunday,1430-2100,6.5,1
-Occupation 2,Sunday,1430-2130,7.0,4
-Occupation 2,Sunday,1430-2330,9.0,2
-Occupation 2,Sunday,1500-1900,4.0,6
-Occupation 2,Sunday,1500-2130,6.5,5
-Occupation 2,Sunday,1530-2330,8.0,6
-Occupation 3,Monday,0100-0900,8.0,2
-Occupation 3,Monday,0430-0900,4.5,5
-Occupation 3,Monday,0600-1000,4.0,11
-Occupation 3,Monday,0630-1030,4.0,12
-Occupation 3,Monday,0800-1530,7.5,2
-Occupation 3,Monday,0800-1800,10.0,10
-Occupation 3,Monday,0800-1830,10.5,1
-Occupation 3,Monday,1100-2130,10.5,7
-Occupation 3,Monday,1330-2300,9.5,1
-Occupation 3,Monday,1400-2130,7.5,12
-Occupation 3,Monday,2100-0100,4.0,9
-Occupation 3,Tuesday,0200-1100,9.0,2
-Occupation 3,Tuesday,0530-1100,5.5,6
-Occupation 3,Tuesday,0630-1130,5.0,2
-Occupation 3,Tuesday,0700-1100,4.0,5
-Occupation 3,Tuesday,0700-1800,11.0,1
-Occupation 3,Tuesday,0830-1800,9.5,8
-Occupation 3,Tuesday,0830-1830,10.0,4
-Occupation 3,Tuesday,1000-1830,8.5,9
-Occupation 3,Tuesday,1030-1800,7.5,9
-Occupation 3,Tuesday,1630-0030,8.0,3
-Occupation 3,Tuesday,1630-2200,5.5,1
-Occupation 3,Tuesday,1730-0330,10.0,4
-Occupation 3,Tuesday,1730-2200,4.5,11
-Occupation 3,Tuesday,2330-0930,10.0,1
-Occupation 3,Wednesday,0330-0930,6.0,1
-Occupation 3,Wednesday,0530-0930,4.0,13
-Occupation 3,Wednesday,0600-1000,4.0,16
-Occupation 3,Wednesday,0730-1130,4.0,1
-Occupation 3,Wednesday,0800-1200,4.0,10
-Occupation 3,Wednesday,0830-1330,5.0,16
-Occupation 3,Wednesday,1300-2000,7.0,15
-Occupation 3,Wednesday,1430-2000,5.5,4
-Occupation 3,Wednesday,1530-2000,4.5,4
-Occupation 3,Wednesday,1600-2000,4.0,1
-Occupation 3,Wednesday,1600-2100,5.0,6
-Occupation 3,Wednesday,1730-0300,9.5,2
-Occupation 3,Wednesday,1730-2200,4.5,2
-Occupation 3,Wednesday,1830-2300,4.5,1
-Occupation 3,Thursday,0200-0800,6.0,6
-Occupation 3,Thursday,0500-0900,4.0,9
-Occupation 3,Thursday,0600-1000,4.0,10
-Occupation 3,Thursday,0630-1630,10.0,3
-Occupation 3,Thursday,0700-1800,11.0,1
-Occupation 3,Thursday,0730-1630,9.0,5
-Occupation 3,Thursday,0730-1800,10.5,11
-Occupation 3,Thursday,0730-1830,11.0,2
-Occupation 3,Thursday,1500-1900,4.0,8
-Occupation 3,Thursday,1600-0000,8.0,8
-Occupation 3,Thursday,1600-2000,4.0,7
-Occupation 3,Thursday,1600-2100,5.0,7
-Occupation 3,Friday,0200-0730,5.5,2
-Occupation 3,Friday,0400-0800,4.0,4
-Occupation 3,Friday,0400-0900,5.0,4
-Occupation 3,Friday,0530-1000,4.5,2
-Occupation 3,Friday,0600-1000,4.0,9
-Occupation 3,Friday,0600-1400,8.0,15
-Occupation 3,Friday,0600-1430,8.5,2
-Occupation 3,Friday,1330-0000,10.5,5
-Occupation 3,Friday,1330-1900,5.5,4
-Occupation 3,Friday,1330-2000,6.5,1
-Occupation 3,Friday,1330-2030,7.0,4
-Occupation 3,Friday,1330-2130,8.0,1
-Occupation 3,Friday,1500-0130,10.5,2
-Occupation 3,Friday,1500-1930,4.5,4
-Occupation 3,Friday,1500-2000,5.0,1
-Occupation 3,Friday,1530-1930,4.0,7
-Occupation 3,Friday,1700-2130,4.5,4
-Occupation 3,Saturday,0230-1130,9.0,1
-Occupation 3,Saturday,0230-1200,9.5,1
-Occupation 3,Saturday,0430-1200,7.5,1
-Occupation 3,Saturday,0600-1130,5.5,12
-Occupation 3,Saturday,0700-1130,4.5,3
-Occupation 3,Saturday,0700-1200,5.0,1
-Occupation 3,Saturday,0800-1200,4.0,9
-Occupation 3,Saturday,1100-1530,4.5,2
-Occupation 3,Saturday,1100-1800,7.0,1
-Occupation 3,Saturday,1100-1930,8.5,8
-Occupation 3,Saturday,1100-2000,9.0,9
-Occupation 3,Saturday,1100-2200,11.0,3
-Occupation 3,Saturday,1730-0330,10.0,5
-Occupation 3,Saturday,1730-2330,6.0,1
-Occupation 3,Sunday,0600-1030,4.5,7
-Occupation 3,Sunday,0630-1030,4.0,3
-Occupation 3,Sunday,0630-1600,9.5,9
-Occupation 3,Sunday,0730-1600,8.5,3
-Occupation 3,Sunday,1000-1800,8.0,3
-Occupation 3,Sunday,1000-1830,8.5,2
-Occupation 3,Sunday,1000-2000,10.0,5
-Occupation 3,Sunday,1530-0200,10.5,5
-Staff,Monday,0030-0730,7.0,2
-Staff,Monday,0030-1000,9.5,4
-Staff,Monday,0100-0730,6.5,2
-Staff,Monday,0600-1630,10.5,2
-Staff,Monday,0630-1400,7.5,4
-Staff,Monday,0630-1630,10.0,1
-Staff,Monday,0630-1730,11.0,6
-Staff,Monday,0700-1800,11.0,12
-Staff,Monday,1100-1830,7.5,1
-Staff,Monday,1300-0000,11.0,2
-Staff,Monday,1300-1830,5.5,5
-Staff,Monday,1300-1900,6.0,3
-Staff,Monday,1300-2130,8.5,1
-Staff,Monday,1300-2330,10.5,5
-Staff,Monday,1330-1800,4.5,1
-Staff,Monday,1330-1930,6.0,1
-Staff,Tuesday,0030-1030,10.0,2
-Staff,Tuesday,0200-1030,8.5,3
-Staff,Tuesday,0500-1500,10.0,4
-Staff,Tuesday,0630-1030,4.0,3
-Staff,Tuesday,0630-1500,8.5,8
-Staff,Tuesday,0700-1800,11.0,3
-Staff,Tuesday,0730-1500,7.5,2
-Staff,Tuesday,0730-1800,10.5,1
-Staff,Tuesday,0830-1730,9.0,2
-Staff,Tuesday,1000-1530,5.5,1
-Staff,Tuesday,1000-1730,7.5,1
-Staff,Tuesday,1000-2030,10.5,6
-Staff,Tuesday,1000-2100,11.0,9
-Staff,Tuesday,1430-0030,10.0,5
-Staff,Tuesday,1430-2230,8.0,6
-Staff,Wednesday,0200-0930,7.5,1
-Staff,Wednesday,0200-1130,9.5,1
-Staff,Wednesday,0600-1130,5.5,9
-Staff,Wednesday,0630-1130,5.0,11
-Staff,Wednesday,0800-1200,4.0,5
-Staff,Wednesday,0900-1700,8.0,1
-Staff,Wednesday,0900-1830,9.5,10
-Staff,Wednesday,1430-2200,7.5,1
-Staff,Wednesday,1500-2030,5.5,9
-Staff,Wednesday,1600-2200,6.0,8
-Staff,Wednesday,1730-2200,4.5,2
-Staff,Wednesday,1830-2300,4.5,5
-Staff,Wednesday,2000-0000,4.0,3
-Staff,Wednesday,2000-0300,7.0,5
-Staff,Thursday,0230-0900,6.5,3
-Staff,Thursday,0500-0900,4.0,4
-Staff,Thursday,0600-1000,4.0,6
-Staff,Thursday,0600-1330,7.5,2
-Staff,Thursday,0630-1130,5.0,2
-Staff,Thursday,0630-1300,6.5,1
-Staff,Thursday,0700-1300,6.0,3
-Staff,Thursday,0700-1330,6.5,4
-Staff,Thursday,0730-1330,6.0,2
-Staff,Thursday,0800-1900,11.0,3
-Staff,Thursday,1100-2000,9.0,8
-Staff,Thursday,1500-2000,5.0,4
-Staff,Thursday,1600-2000,4.0,17
-Staff,Thursday,1700-0000,7.0,4
-Staff,Thursday,1700-0130,8.5,3
-Staff,Thursday,1700-2100,4.0,4
-Staff,Friday,0100-0730,6.5,1
-Staff,Friday,0100-0900,8.0,1
-Staff,Friday,0330-0730,4.0,11
-Staff,Friday,0400-0800,4.0,8
-Staff,Friday,0600-1000,4.0,3
-Staff,Friday,0600-1030,4.5,5
-Staff,Friday,0630-1030,4.0,5
-Staff,Friday,0700-1100,4.0,9
-Staff,Friday,0700-1400,7.0,1
-Staff,Friday,0700-1430,7.5,1
-Staff,Friday,0700-1800,11.0,7
-Staff,Friday,1300-1830,5.5,6
-Staff,Friday,1330-1930,6.0,2
-Staff,Friday,1330-2130,8.0,2
-Staff,Friday,1400-0030,10.5,2
-Staff,Friday,1400-1900,5.0,6
-Staff,Friday,1430-0000,9.5,1
-Staff,Friday,1430-0030,10.0,1
-Staff,Friday,1430-1830,4.0,10
-Staff,Friday,1500-2130,6.5,1
-Staff,Friday,1700-0030,7.5,2
-Staff,Saturday,0400-0800,4.0,1
-Staff,Saturday,0430-0830,4.0,25
-Staff,Saturday,0600-1430,8.5,3
-Staff,Saturday,0700-1430,7.5,2
-Staff,Saturday,0700-1800,11.0,9
-Staff,Saturday,1100-2100,10.0,3
-Staff,Saturday,1300-2130,8.5,2
-Staff,Saturday,1600-2100,5.0,8
-Staff,Saturday,1730-2130,4.0,5
-Staff,Saturday,1730-2200,4.5,1
-Staff,Saturday,2000-0700,11.0,5
-Staff,Sunday,0600-1100,5.0,9
-Staff,Sunday,0600-1700,11.0,8
-Staff,Sunday,1000-2100,11.0,4
-Staff,Sunday,1030-1730,7.0,3
-Staff,Sunday,1030-1830,8.0,2
-Staff,Sunday,1030-2130,11.0,2
-Staff,Sunday,1530-0200,10.5,2
-Staff,Sunday,1630-2100,4.5,10
-Staff,Sunday,1630-2130,5.0,5
-Staff,Sunday,1630-2330,7.0,6
+Operators,Monday,0000-1000,10.0,2
+Operators,Monday,0500-1000,5.0,25
+Operators,Monday,0700-1200,5.0,6
+Operators,Monday,0700-1800,11.0,6
+Operators,Monday,1400-2100,7.0,9
+Operators,Monday,1400-2300,9.0,9
+Operators,Monday,1600-2100,5.0,14
+Operators,Monday,1800-2300,5.0,2
+Operators,Monday,2300-1000,11.0,6
+Operators,Tuesday,0500-1400,9.0,8
+Operators,Tuesday,0500-1600,11.0,5
+Operators,Tuesday,0700-1400,7.0,1
+Operators,Tuesday,0700-1800,11.0,19
+Operators,Tuesday,1200-2300,11.0,8
+Operators,Tuesday,2100-0500,8.0,3
+Operators,Tuesday,2300-1000,11.0,3
+Operators,Wednesday,0000-1000,10.0,2
+Operators,Wednesday,0500-1000,5.0,10
+Operators,Wednesday,0700-1200,5.0,16
+Operators,Wednesday,0700-1600,9.0,9
+Operators,Wednesday,0700-1800,11.0,11
+Operators,Wednesday,1400-0000,10.0,5
+Operators,Wednesday,1400-2100,7.0,1
+Operators,Wednesday,1600-2100,5.0,6
+Operators,Thursday,0000-0700,7.0,14
+Operators,Thursday,0500-1000,5.0,20
+Operators,Thursday,0500-1400,9.0,2
+Operators,Thursday,0500-1600,11.0,10
+Operators,Thursday,1200-1800,6.0,16
+Operators,Thursday,1400-1800,4.0,23
+Operators,Thursday,1600-0000,8.0,9
+Operators,Thursday,1600-2100,5.0,15
+Operators,Friday,0000-1000,10.0,5
+Operators,Friday,0500-1200,7.0,12
+Operators,Friday,0500-1600,11.0,2
+Operators,Friday,0700-1200,5.0,6
+Operators,Friday,0700-1800,11.0,7
+Operators,Friday,1000-2100,11.0,6
+Operators,Friday,1400-2100,7.0,20
+Operators,Friday,1400-2300,9.0,5
+Operators,Friday,1600-2100,5.0,1
+Operators,Friday,1800-0500,11.0,1
+Operators,Friday,2300-1000,11.0,4
+Operators,Saturday,0500-1200,7.0,7
+Operators,Saturday,0700-1800,11.0,25
+Operators,Saturday,1400-1800,4.0,3
+Operators,Saturday,1600-0000,8.0,6
+Operators,Saturday,1600-2100,5.0,5
+Operators,Saturday,1600-2300,7.0,2
+Operators,Sunday,0000-1000,10.0,5
+Operators,Sunday,0500-1000,5.0,11
+Operators,Sunday,0700-1200,5.0,1
+Operators,Sunday,0700-1800,11.0,6
+Operators,Sunday,1200-2100,9.0,11
+Operators,Sunday,1400-0000,10.0,8
+Operators,Sunday,1400-2100,7.0,14
+Operators,Sunday,1600-2100,5.0,1
+Technicians,Monday,0000-1000,10.0,5
+Technicians,Monday,0500-1200,7.0,2
+Technicians,Monday,0700-1200,5.0,27
+Technicians,Monday,0700-1800,11.0,6
+Technicians,Monday,1000-2100,11.0,17
+Technicians,Monday,1400-2300,9.0,6
+Technicians,Monday,1600-2300,7.0,10
+Technicians,Monday,1800-0500,11.0,3
+Technicians,Monday,2100-0700,10.0,2
+Technicians,Monday,2300-1000,11.0,1
+Technicians,Tuesday,0500-1200,7.0,13
+Technicians,Tuesday,0500-1400,9.0,4
+Technicians,Tuesday,0500-1600,11.0,4
+Technicians,Tuesday,1000-1800,8.0,3
+Technicians,Tuesday,1000-2100,11.0,11
+Technicians,Tuesday,1200-2300,11.0,4
+Technicians,Tuesday,1600-2300,7.0,16
+Technicians,Tuesday,1800-0500,11.0,3
+Technicians,Tuesday,1800-2300,5.0,9
+Technicians,Tuesday,2300-1000,11.0,1
+Technicians,Wednesday,0000-1000,10.0,1
+Technicians,Wednesday,0500-1200,7.0,7
+Technicians,Wednesday,0500-1600,11.0,11
+Technicians,Wednesday,0700-1200,5.0,6
+Technicians,Wednesday,0700-1800,11.0,4
+Technicians,Wednesday,1000-2100,11.0,8
+Technicians,Wednesday,1200-2100,9.0,1
+Technicians,Wednesday,1200-2300,11.0,2
+Technicians,Wednesday,1400-2100,7.0,6
+Technicians,Wednesday,1600-0000,8.0,7
+Technicians,Wednesday,1600-2100,5.0,19
+Technicians,Thursday,0000-1000,10.0,5
+Technicians,Thursday,0500-1000,5.0,20
+Technicians,Thursday,0700-1200,5.0,12
+Technicians,Thursday,0700-1400,7.0,1
+Technicians,Thursday,0700-1800,11.0,9
+Technicians,Thursday,1200-2100,9.0,7
+Technicians,Thursday,1400-2100,7.0,27
+Technicians,Thursday,1600-2100,5.0,1
+Technicians,Thursday,1800-0000,6.0,3
+Technicians,Thursday,1800-0500,11.0,8
+Technicians,Friday,0500-1000,5.0,38
+Technicians,Friday,0500-1200,7.0,5
+Technicians,Friday,0500-1600,11.0,3
+Technicians,Friday,0700-1800,11.0,3
+Technicians,Friday,1400-1800,4.0,10
+Technicians,Friday,1400-2100,7.0,23
+Technicians,Friday,1600-2100,5.0,12
+Technicians,Friday,1600-2300,7.0,8
+Technicians,Friday,2300-1000,11.0,8
+Technicians,Saturday,0500-1600,11.0,5
+Technicians,Saturday,0700-1800,11.0,2
+Technicians,Saturday,1000-2100,11.0,1
+Technicians,Saturday,1200-2100,9.0,3
+Technicians,Saturday,1400-0000,10.0,3
+Technicians,Saturday,1400-2100,7.0,6
+Technicians,Saturday,1600-2100,5.0,6
+Technicians,Saturday,1600-2300,7.0,3
+Technicians,Sunday,0000-0700,7.0,8
+Technicians,Sunday,0500-1200,7.0,10
+Technicians,Sunday,0700-1800,11.0,6
+Technicians,Sunday,1000-1800,8.0,10
+Technicians,Sunday,1000-2100,11.0,2
+Technicians,Sunday,1400-0000,10.0,5
+Technicians,Sunday,1400-1800,4.0,16
+Technicians,Sunday,1600-0000,8.0,5
