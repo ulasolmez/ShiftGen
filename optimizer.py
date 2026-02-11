@@ -230,22 +230,33 @@ def _generate_shifts_for_occupation(day_idx, shuttle_windows, final_required, nu
 
 
 def _assign_personnel(all_assigned_shifts, max_weekly_hours, min_weekly_hours, min_days_off, occ_prefix):
-    """Greedy bin-packing assignment for one occupation."""
-    REST_INTERVALS = 144
+    """
+    Two-pass personnel assignment to prevent Sunday starvation.
+    
+    Problem: Chronological assignment (Mon→Sun) exhausts workers by Sunday,
+    forcing creation of new workers who only get ~10-20h of Sunday shifts.
+    
+    Solution: Interleaved day-balanced assignment.
+    Pass 1: Assign Sunday shifts first to seed the worker pool.
+    Pass 2: Fill remaining days (Sat→Mon) into Sunday-seeded workers.
+    This ensures Sunday workers accumulate 35-48h across the full week.
+    """
+    REST_INTERVALS = 144  # 12 hours in 5-min intervals
     total_shift_hours = sum(s['duration'] for s in all_assigned_shifts)
     theoretical_min_people = max(1, math.ceil(total_shift_hours / max_weekly_hours)) if max_weekly_hours > 0 else 1
+    max_working_days = 7 - math.ceil(min_days_off)
 
     personnel_pool = []
     for i in range(theoretical_min_people):
         personnel_pool.append({
             'id': i + 1,
-            'end_time': -REST_INTERVALS - 1,
             'weekly_hours': 0.0,
             'days_worked': set(),
-            'shift_times': []
+            'shift_times': []  # list of (start_idx, end_idx) tuples
         })
 
     roster_rows = []
+    shift_to_person = {}  # shift index -> person id
 
     def violates_off_day_policy(person, shift_day_idx, shift_start_idx, shift_end_idx):
         if min_days_off == 1.0:
@@ -268,65 +279,182 @@ def _assign_personnel(all_assigned_shifts, max_weekly_hours, min_weekly_hours, m
                 return True
         return False
 
-    for shift in all_assigned_shifts:
-        assigned = False
-        shift_day_idx = shift['start'] // 288
-        max_working_days = 7 - math.ceil(min_days_off)
+    def respects_rest(person, shift_start, shift_end):
+        """Check 12h rest between all existing shifts and the new shift."""
+        for (s, e) in person['shift_times']:
+            # New shift must not overlap and must have 12h gap in both directions
+            if not (shift_end + REST_INTERVALS <= s or shift_start >= e + REST_INTERVALS):
+                return False
+        return True
 
-        personnel_pool.sort(key=lambda x: (
-            len(x['days_worked']) >= max_working_days,
-            x['weekly_hours'] >= min_weekly_hours,
-            -1 * (min_weekly_hours - x['weekly_hours']) if x['weekly_hours'] < min_weekly_hours else 0,
-            x['end_time'],
-            -1 * (max_weekly_hours - x['weekly_hours'])
-        ))
+    def try_assign(shift, prefer_underfilled=True):
+        """Try to assign a shift to an existing worker. Returns person_id or None."""
+        shift_day_idx = shift['start'] // 288
+
+        # Sort: prioritize workers who need more hours (below min), then by capacity
+        if prefer_underfilled:
+            personnel_pool.sort(key=lambda x: (
+                len(x['days_worked']) >= max_working_days and shift_day_idx not in x['days_worked'],
+                x['weekly_hours'] >= min_weekly_hours,
+                -1 * (min_weekly_hours - x['weekly_hours']) if x['weekly_hours'] < min_weekly_hours else 0,
+                len(x['shift_times']),
+                -1 * (max_weekly_hours - x['weekly_hours'])
+            ))
+        else:
+            personnel_pool.sort(key=lambda x: (
+                len(x['days_worked']) >= max_working_days and shift_day_idx not in x['days_worked'],
+                -1 * x['weekly_hours'],  # prefer fuller workers (pack them tight)
+            ))
 
         for p in personnel_pool:
-            if shift["start"] >= p['end_time'] + REST_INTERVALS:
-                if p['weekly_hours'] + shift['duration'] <= max_weekly_hours:
-                    if not violates_off_day_policy(p, shift_day_idx, shift["start"], shift["end"]):
-                        p['end_time'] = shift["end"]
-                        p['weekly_hours'] += shift["duration"]
-                        p['days_worked'].add(shift_day_idx)
-                        p['shift_times'].append((shift["start"], shift["end"]))
-                        p_id = p['id']
-                        assigned = True
-                        break
+            if p['weekly_hours'] + shift['duration'] > max_weekly_hours:
+                continue
+            if not respects_rest(p, shift['start'], shift['end']):
+                continue
+            if violates_off_day_policy(p, shift_day_idx, shift['start'], shift['end']):
+                continue
+            # Assign
+            p['weekly_hours'] += shift['duration']
+            p['days_worked'].add(shift_day_idx)
+            p['shift_times'].append((shift['start'], shift['end']))
+            return p['id']
+        return None
 
-        if not assigned:
-            can_assign_to_existing = False
-            for p in personnel_pool:
-                if shift["start"] >= p['end_time'] + REST_INTERVALS:
-                    if p['weekly_hours'] + shift['duration'] <= max_weekly_hours:
-                        if not violates_off_day_policy(p, shift_day_idx, shift["start"], shift["end"]):
-                            can_assign_to_existing = True
-                            break
+    def create_new_worker(shift):
+        """Create a new worker and assign the shift."""
+        shift_day_idx = shift['start'] // 288
+        new_id = len(personnel_pool) + 1
+        personnel_pool.append({
+            'id': new_id,
+            'weekly_hours': shift['duration'],
+            'days_worked': {shift_day_idx},
+            'shift_times': [(shift['start'], shift['end'])]
+        })
+        return new_id
 
-            if not can_assign_to_existing:
-                new_id = len(personnel_pool) + 1
-                personnel_pool.append({
-                    'id': new_id,
-                    'end_time': shift["end"],
-                    'weekly_hours': shift["duration"],
-                    'days_worked': {shift_day_idx},
-                    'shift_times': [(shift["start"], shift["end"])]
-                })
-                p_id = new_id
-            else:
-                for p in personnel_pool:
-                    if shift["start"] >= p['end_time'] + REST_INTERVALS:
-                        if p['weekly_hours'] + shift['duration'] <= max_weekly_hours:
-                            if not violates_off_day_policy(p, shift_day_idx, shift["start"], shift["end"]):
-                                p['end_time'] = shift["end"]
-                                p['weekly_hours'] += shift["duration"]
-                                p['days_worked'].add(shift_day_idx)
-                                p['shift_times'].append((shift["start"], shift["end"]))
-                                p_id = p['id']
-                                assigned = True
+    # ========= SPLIT SHIFTS BY DAY =========
+    # Group shifts and remember original indices for roster output
+    indexed_shifts = list(enumerate(all_assigned_shifts))
+    
+    sunday_shifts = [(i, s) for i, s in indexed_shifts if s['start'] // 288 == 6]
+    saturday_shifts = [(i, s) for i, s in indexed_shifts if s['start'] // 288 == 5]
+    weekday_shifts = [(i, s) for i, s in indexed_shifts if s['start'] // 288 < 5]
+
+    # Sort within each group by start time, prefer longer shifts first
+    sunday_shifts.sort(key=lambda x: (x[1]['start'], -x[1]['duration']))
+    saturday_shifts.sort(key=lambda x: (x[1]['start'], -x[1]['duration']))
+    weekday_shifts.sort(key=lambda x: (x[1]['start'], -x[1]['duration']))
+
+    # ========= PASS 1: SEED WITH SUNDAY SHIFTS =========
+    # Assign Sunday shifts first — these workers will get filled with earlier-week shifts
+    for idx, shift in sunday_shifts:
+        p_id = try_assign(shift, prefer_underfilled=True)
+        if p_id is None:
+            p_id = create_new_worker(shift)
+        shift_to_person[idx] = p_id
+
+    sunday_workers = len(personnel_pool)
+    print(f"    Pass 1 (Sunday seed): {len(sunday_shifts)} shifts → {sunday_workers} workers")
+
+    # ========= PASS 2: FILL SATURDAY (BACKWARD) =========
+    for idx, shift in saturday_shifts:
+        p_id = try_assign(shift, prefer_underfilled=True)
+        if p_id is None:
+            p_id = create_new_worker(shift)
+        shift_to_person[idx] = p_id
+
+    sat_workers = len(personnel_pool)
+    print(f"    Pass 2 (Saturday fill): {len(saturday_shifts)} shifts → {sat_workers - sunday_workers} new workers")
+
+    # ========= PASS 3: FILL WEEKDAYS (MON→FRI) =========
+    for idx, shift in weekday_shifts:
+        p_id = try_assign(shift, prefer_underfilled=True)
+        if p_id is None:
+            p_id = create_new_worker(shift)
+        shift_to_person[idx] = p_id
+
+    total_workers = len(personnel_pool)
+    print(f"    Pass 3 (Weekday fill): {len(weekday_shifts)} shifts → {total_workers - sat_workers} new workers")
+
+    # ========= PASS 4: REDISTRIBUTION =========
+    # Try to move shifts from overloaded workers to underutilized ones
+    underfilled = [p for p in personnel_pool if p['weekly_hours'] < min_weekly_hours]
+    if underfilled:
+        # For each underfilled worker, see if we can steal compatible shifts from other workers
+        # who have shifts on days the underfilled worker doesn't work yet
+        redistributed = 0
+        for uf in underfilled:
+            if uf['weekly_hours'] >= min_weekly_hours:
+                continue
+            needed = min_weekly_hours - uf['weekly_hours']
+            # Look for shifts we can move from workers above min hours
+            for donor in personnel_pool:
+                if donor['id'] == uf['id']:
+                    continue
+                if donor['weekly_hours'] <= min_weekly_hours:
+                    continue  # Don't steal from other underfilled workers
+                
+                # Try each of the donor's shifts
+                for shift_time in list(donor['shift_times']):
+                    s_start, s_end = shift_time
+                    s_day = s_start // 288
+                    s_duration = (s_end - s_start) / 12.0
+                    
+                    # Would donor still be above min after losing this shift?
+                    if donor['weekly_hours'] - s_duration < min_weekly_hours:
+                        continue
+                    # Can underfilled worker take it?
+                    if uf['weekly_hours'] + s_duration > max_weekly_hours:
+                        continue
+                    if not respects_rest(uf, s_start, s_end):
+                        continue
+                    if violates_off_day_policy(uf, s_day, s_start, s_end):
+                        continue
+                    
+                    # Move the shift
+                    donor['shift_times'].remove(shift_time)
+                    donor['weekly_hours'] -= s_duration
+                    donor['days_worked'] = set(t[0] // 288 for t in donor['shift_times'])
+                    
+                    uf['shift_times'].append(shift_time)
+                    uf['weekly_hours'] += s_duration
+                    uf['days_worked'].add(s_day)
+                    
+                    # Update roster mapping
+                    for orig_idx, pid in shift_to_person.items():
+                        if pid == donor['id']:
+                            orig_shift = all_assigned_shifts[orig_idx]
+                            if orig_shift['start'] == s_start and orig_shift['end'] == s_end:
+                                shift_to_person[orig_idx] = uf['id']
                                 break
+                    
+                    redistributed += 1
+                    if uf['weekly_hours'] >= min_weekly_hours:
+                        break
+                if uf['weekly_hours'] >= min_weekly_hours:
+                    break
+        
+        if redistributed > 0:
+            print(f"    Redistribution: moved {redistributed} shifts to fill underfilled workers")
 
+    # ========= PASS 5: REMOVE EMPTY WORKERS & COMPACT IDs =========
+    # Remove workers with 0 shifts (possible after redistribution)
+    active_workers = [p for p in personnel_pool if p['shift_times']]
+    
+    # Re-number workers by total hours descending (cosmetic)
+    active_workers.sort(key=lambda x: -x['weekly_hours'])
+    id_remap = {}
+    for new_idx, p in enumerate(active_workers):
+        id_remap[p['id']] = new_idx + 1
+        p['id'] = new_idx + 1
+
+    # ========= BUILD ROSTER =========
+    for orig_idx in range(len(all_assigned_shifts)):
+        shift = all_assigned_shifts[orig_idx]
+        old_pid = shift_to_person[orig_idx]
+        new_pid = id_remap.get(old_pid, old_pid)
         roster_rows.append({
-            "Personnel_ID": f"{occ_prefix}_{p_id:03d}",
+            "Personnel_ID": f"{occ_prefix}_{new_pid:03d}",
             "Day": shift["day_idx"],
             "Shift": shift["display"],
             "Start": shift["raw_start"],
@@ -335,8 +463,17 @@ def _assign_personnel(all_assigned_shifts, max_weekly_hours, min_weekly_hours, m
             "start_idx": shift["start"]
         })
 
-    people_below_min = sum(1 for p in personnel_pool if p['weekly_hours'] < min_weekly_hours)
-    return roster_rows, personnel_pool, people_below_min
+    people_below_min = sum(1 for p in active_workers if p['weekly_hours'] < min_weekly_hours)
+    
+    # Print hours distribution
+    hours = [p['weekly_hours'] for p in active_workers]
+    if hours:
+        print(f"    Hours distribution: min={min(hours):.1f}, avg={sum(hours)/len(hours):.1f}, max={max(hours):.1f}")
+        below_20 = sum(1 for h in hours if h < 20)
+        below_min = sum(1 for h in hours if h < min_weekly_hours)
+        print(f"    Workers: {len(active_workers)} total, {below_20} below 20h, {below_min} below {min_weekly_hours}h min")
+
+    return roster_rows, active_workers, people_below_min
 
 
 def solve_weekly_shift_optimization(

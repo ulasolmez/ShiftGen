@@ -300,13 +300,27 @@ if os.path.exists("weekly_summary.csv"):
                     group_cols = ['Start', 'End']
                     if 'Occupation' in df_roster.columns:
                         group_cols = ['Occupation'] + group_cols
-                    unique_shifts = df_roster.groupby(group_cols).size().reset_index(name='Total Assigned')
+
+                    # Build per-shift-type day usage: which days each shift is used on
+                    day_names_map = {0: 'Mon', 1: 'Tue', 2: 'Wed', 3: 'Thu', 4: 'Fri', 5: 'Sat', 6: 'Sun'}
+                    def get_days_used(sub_df):
+                        day_vals = sub_df['Day'].unique()
+                        day_labels = sorted(day_vals)
+                        return ', '.join(day_names_map.get(d, str(d)) for d in day_labels)
+
+                    unique_shifts = df_roster.groupby(group_cols).agg(
+                        **{'Total Assigned': ('Start', 'size')}
+                    ).reset_index()
+                    days_used = df_roster.groupby(group_cols)['Day'].apply(
+                        lambda x: ', '.join(day_names_map.get(d, str(d)) for d in sorted(x.unique()))
+                    ).reset_index(name='Days Used')
+                    unique_shifts = unique_shifts.merge(days_used, on=group_cols)
                     unique_shifts = unique_shifts.sort_values(group_cols)
 
                     def format_shift_type(row):
                         return f"{row['Start'].replace(':', '')}-{row['End'].replace(':', '')}"
                     unique_shifts['Shift_Type'] = unique_shifts.apply(format_shift_type, axis=1)
-                    cols_order = ['Shift_Type'] + group_cols + ['Total Assigned']
+                    cols_order = ['Shift_Type'] + group_cols + ['Total Assigned', 'Days Used']
                     unique_shifts = unique_shifts[cols_order]
                     unique_shifts.to_excel(writer, sheet_name='Shift Types', index=False)
 
